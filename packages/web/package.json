@@ -1,0 +1,10 @@
+{
+  "name": "@reviewd/web",
+  "version": "0.1.0",
+  "description": "reviewd — web UI (placeholder; built in a later ticket)",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  }
+}
