@@ -10,7 +10,7 @@ function isFree(port: number): Promise<boolean> {
   });
 }
 
-export async function findFreePort(base: number = BASE_PORT): Promise<number> {
+export async function findFreePort(base: number): Promise<number> {
   for (let port = base; port < base + 100; port++) {
     if (await isFree(port)) return port;
   }

@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
 import { repoDataDir } from './paths.js';
 import { BASE_PORT, findFreePort } from './port.js';
@@ -20,7 +21,10 @@ function resolveRepoRoot(): string {
 }
 
 function packageVersion(): string {
-  const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8'));
+  // fileURLToPath, not import.meta.dirname — the latter needs Node >= 20.11 but engines allows >= 20
+  const pkg = JSON.parse(
+    readFileSync(join(fileURLToPath(import.meta.url), '..', '..', 'package.json'), 'utf8')
+  );
   return pkg.version as string;
 }
 

@@ -1,6 +1,6 @@
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, readFileSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { createServer, type Server } from 'node:net';
+import { type Server } from 'node:net';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,6 +8,8 @@ import { pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { repoDataDir } from '../src/paths.js';
+import { serverJsonPath as serverJsonIn } from '../src/serverJson.js';
+import { closeAll, listenOn } from './helpers.js';
 
 const CLI = join(import.meta.dirname, '..', 'src', 'cli.ts');
 // --import with an absolute file URL keeps the CLI in a single process (tsx's
@@ -16,7 +18,8 @@ const TSX_LOADER = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).
 
 interface Launched {
   proc: ChildProcess;
-  stdout: () => string;
+  /** stdout and stderr combined */
+  output: () => string;
   exited: Promise<number | null>;
 }
 
@@ -48,7 +51,7 @@ function launch(repo: string, dataDir: string, basePort: number): Launched {
   proc.stdout!.on('data', (chunk) => (out += chunk));
   proc.stderr!.on('data', (chunk) => (out += chunk));
   const exited = new Promise<number | null>((resolve) => proc.once('exit', resolve));
-  return { proc, stdout: () => out, exited };
+  return { proc, output: () => out, exited };
 }
 
 async function waitFor(cond: () => boolean, ms = 10_000): Promise<void> {
@@ -59,25 +62,18 @@ async function waitFor(cond: () => boolean, ms = 10_000): Promise<void> {
   }
 }
 
-function occupy(port: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.once('error', reject);
-    srv.listen(port, '127.0.0.1', () => {
-      blockers.push(srv);
-      resolve();
-    });
-  });
+async function occupy(port: number): Promise<void> {
+  blockers.push(await listenOn(port));
 }
 
 function serverJsonPath(repo: string, dataDir: string): string {
-  return join(repoDataDir(repo, dataDir), 'server.json');
+  return serverJsonIn(repoDataDir(repo, dataDir));
 }
 
 afterEach(async () => {
   for (const c of children) if (c.exitCode === null) c.kill('SIGKILL');
   children.length = 0;
-  await Promise.all(blockers.map((s) => new Promise((r) => s.close(r))));
+  await closeAll(blockers);
   blockers.length = 0;
   for (const d of tmpdirs) rmSync(d, { recursive: true, force: true });
   tmpdirs.length = 0;
@@ -89,8 +85,8 @@ describe('reviewd CLI lifecycle', () => {
     const dataDir = makeDataDir();
     const run = launch(repo, dataDir, 25700);
 
-    await waitFor(() => run.stdout().includes('http://'));
-    const banner = run.stdout().trim();
+    await waitFor(() => run.output().includes('http://'));
+    const banner = run.output().trim();
     expect(banner.split('\n')).toHaveLength(1);
     expect(banner).toContain('reviewd');
     expect(banner).toContain(repo);
@@ -121,8 +117,8 @@ describe('reviewd CLI lifecycle', () => {
     await occupy(25720);
     const run = launch(repo, dataDir, 25720);
 
-    await waitFor(() => run.stdout().includes('http://'));
-    expect(run.stdout()).toContain(':25721');
+    await waitFor(() => run.output().includes('http://'));
+    expect(run.output()).toContain(':25721');
     const sj = JSON.parse(readFileSync(serverJsonPath(repo, dataDir), 'utf8'));
     expect(sj.port).toBe(25721);
   });
@@ -131,11 +127,11 @@ describe('reviewd CLI lifecycle', () => {
     const repo = makeRepo();
     const dataDir = makeDataDir();
     const first = launch(repo, dataDir, 25740);
-    await waitFor(() => first.stdout().includes('http://'));
+    await waitFor(() => first.output().includes('http://'));
 
     const second = launch(repo, dataDir, 25740);
     expect(await second.exited).toBe(0);
-    expect(second.stdout()).toContain('http://localhost:25740');
+    expect(second.output()).toContain('http://localhost:25740');
 
     // first is untouched: still healthy, server.json still points at it
     const health = (await (await fetch('http://localhost:25740/api/health')).json()) as Record<string, unknown>;
@@ -155,8 +151,8 @@ describe('reviewd CLI lifecycle', () => {
     );
 
     const run = launch(repo, dataDir, 25760);
-    await waitFor(() => run.stdout().includes('http://'));
-    expect(run.stdout()).not.toContain('already running');
+    await waitFor(() => run.output().includes('http://'));
+    expect(run.output()).not.toContain('already running');
 
     const sj = JSON.parse(readFileSync(join(dir, 'server.json'), 'utf8'));
     expect(sj.pid).toBe(run.proc.pid);

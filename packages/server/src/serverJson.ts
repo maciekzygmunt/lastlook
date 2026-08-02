@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { HealthResponse } from './app.js';
 
 export interface ServerJson {
   repoPath: string;
@@ -36,7 +37,7 @@ export async function isHealthy(info: ServerJson): Promise<boolean> {
       signal: AbortSignal.timeout(1000),
     });
     if (!res.ok) return false;
-    const body = (await res.json()) as { ok?: boolean; repoPath?: string };
+    const body = (await res.json()) as Partial<HealthResponse>;
     return body.ok === true && body.repoPath === info.repoPath;
   } catch {
     return false;

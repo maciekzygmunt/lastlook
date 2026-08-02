@@ -5,6 +5,12 @@ export interface AppContext {
   version: string;
 }
 
+export interface HealthResponse {
+  ok: boolean;
+  repoPath: string;
+  version: string;
+}
+
 export function createApp({ repoPath, version }: AppContext): Hono {
   const app = new Hono();
 

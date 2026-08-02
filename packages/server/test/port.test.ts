@@ -1,22 +1,16 @@
-import { createServer, type Server } from 'node:net';
+import { type Server } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { findFreePort } from '../src/port.js';
+import { closeAll, listenOn } from './helpers.js';
 
 const occupied: Server[] = [];
 
-function occupy(port: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.once('error', reject);
-    srv.listen(port, '127.0.0.1', () => {
-      occupied.push(srv);
-      resolve();
-    });
-  });
+async function occupy(port: number): Promise<void> {
+  occupied.push(await listenOn(port));
 }
 
 afterEach(async () => {
-  await Promise.all(occupied.map((s) => new Promise((r) => s.close(r))));
+  await closeAll(occupied);
   occupied.length = 0;
 });
 
