@@ -1,7 +1,8 @@
 import { serve } from '@hono/node-server';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
 import { repoDataDir } from './paths.js';
@@ -28,6 +29,15 @@ function packageVersion(): string {
   return pkg.version as string;
 }
 
+function webDistDir(): string | undefined {
+  try {
+    const require = createRequire(import.meta.url);
+    return join(dirname(require.resolve('@reviewd/web/package.json')), 'dist');
+  } catch {
+    return undefined;
+  }
+}
+
 async function main(): Promise<void> {
   const repoPath = resolveRepoRoot();
   const repoDir = repoDataDir(repoPath);
@@ -40,7 +50,7 @@ async function main(): Promise<void> {
 
   const basePort = Number(process.env.REVIEWD_BASE_PORT ?? BASE_PORT);
   const port = await findFreePort(basePort);
-  const app = createApp({ repoPath, version: packageVersion() });
+  const app = createApp({ repoPath, version: packageVersion(), webDistDir: webDistDir() });
 
   serve({ fetch: app.fetch, port, hostname: '127.0.0.1' }, () => {
     writeServerJson(repoDir, {

@@ -1,9 +1,11 @@
 import { Hono } from 'hono';
 import { DIFF_MODES, DiffError, computeDiff, type DiffMode } from './diff.js';
+import { mountWebUi } from './static.js';
 
 export interface AppContext {
   repoPath: string;
   version: string;
+  webDistDir?: string;
 }
 
 export interface HealthResponse {
@@ -16,7 +18,7 @@ function isDiffMode(mode: string | undefined): mode is DiffMode {
   return DIFF_MODES.includes(mode as DiffMode);
 }
 
-export function createApp({ repoPath, version }: AppContext): Hono {
+export function createApp({ repoPath, version, webDistDir }: AppContext): Hono {
   const app = new Hono();
 
   app.get('/api/health', (c) => c.json({ ok: true, repoPath, version }));
@@ -33,6 +35,9 @@ export function createApp({ repoPath, version }: AppContext): Hono {
       throw error;
     }
   });
+
+  // Mounted last: the catch-all must not shadow /api routes
+  if (webDistDir) mountWebUi(app, webDistDir);
 
   return app;
 }

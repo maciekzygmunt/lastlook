@@ -1,10 +1,34 @@
 {
   "name": "@reviewd/web",
   "version": "0.1.0",
-  "description": "reviewd — web UI (placeholder; built in a later ticket)",
+  "description": "reviewd — web UI",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=20"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@pierre/diffs": "^1.2.12",
+    "@pierre/theme": "^1.1.0",
+    "@pierre/trees": "^1.0.0-beta.6",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "typescript": "^5.7.2",
+    "vite": "^8.2.0",
+    "vitest": "^2.1.8"
   }
 }
