@@ -107,6 +107,20 @@ export class Store {
     return { review, comments: flipped };
   }
 
+  /** Flip an open comment to its settled status; resolve stamps resolvedAt, dismiss doesn't. */
+  settleComment(id: string, status: 'resolved' | 'dismissed'): Comment {
+    const comment = this.load().comments.find((c) => c.id === id);
+    if (!comment) throw new Error(`no comment ${id}`);
+    comment.status = status;
+    if (status === 'resolved') comment.resolvedAt = new Date().toISOString();
+    this.save();
+    return comment;
+  }
+
+  getReview(id: string): Review | undefined {
+    return this.load().reviews.find((r) => r.id === id);
+  }
+
   deleteComment(id: string): void {
     const data = this.load();
     data.comments = data.comments.filter((c) => c.id !== id);

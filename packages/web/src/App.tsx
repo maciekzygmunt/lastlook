@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parsePatchFiles } from '@pierre/diffs';
 import type {
   DiffLineAnnotation,
@@ -12,6 +12,7 @@ import {
   ApiError,
   createDraft,
   deleteDraft,
+  dismissComment,
   fetchComments,
   fetchDiff,
   fetchHealth,
@@ -68,12 +69,35 @@ export default function App() {
   const [showResolved, setShowResolved] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  // Bumped on every local comment mutation so a poll response started before
+  // the mutation can't overwrite the fresher local state.
+  const commentsEpoch = useRef(0);
+
   useEffect(() => {
     fetchHealth().then(
       (h) => setRepoPath(h.repoPath),
       () => setRepoPath('')
     );
     fetchComments().then(setComments, (error: Error) => setApiError(error.message));
+  }, []);
+
+  // Live status updates: the agent resolves comments out-of-band, so poll for
+  // flips instead of requiring a manual reload. Errors are ignored — the next
+  // tick retries, and user-initiated calls surface their own errors.
+  useEffect(() => {
+    const id = setInterval(async () => {
+      const before = commentsEpoch.current;
+      try {
+        const fresh = await fetchComments();
+        if (commentsEpoch.current !== before) return;
+        setComments((prev) =>
+          JSON.stringify(prev) === JSON.stringify(fresh) ? prev : fresh
+        );
+      } catch {
+        // server briefly unreachable — retry next tick
+      }
+    }, 3000);
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -130,6 +154,12 @@ export default function App() {
     setEditingId(null);
   }, []);
 
+  /** The one write path for local comment changes — keeps the epoch bump paired with the update. */
+  const applyComments = useCallback((updater: (prev: Comment[]) => Comment[]) => {
+    commentsEpoch.current++;
+    setComments(updater);
+  }, []);
+
   /** Wraps a comment mutation so failures surface in the error bar instead of vanishing. */
   const mutate = useCallback(async (action: () => Promise<void>) => {
     try {
@@ -144,29 +174,38 @@ export default function App() {
     (anchor: CommentAnchor, body: string) =>
       mutate(async () => {
         const created = await createDraft(body, anchor);
-        setComments((c) => [...c, created]);
+        applyComments((c) => [...c, created]);
         setComposer(null);
       }),
-    [mutate]
+    [mutate, applyComments]
   );
 
   const saveDraftBody = useCallback(
     (id: string, body: string) =>
       mutate(async () => {
         const updated = await updateDraft(id, { body });
-        setComments((c) => c.map((x) => (x.id === id ? updated : x)));
+        applyComments((c) => c.map((x) => (x.id === id ? updated : x)));
         setEditingId(null);
       }),
-    [mutate]
+    [mutate, applyComments]
   );
 
   const removeDraft = useCallback(
     (id: string) =>
       mutate(async () => {
         await deleteDraft(id);
-        setComments((c) => c.filter((x) => x.id !== id));
+        applyComments((c) => c.filter((x) => x.id !== id));
       }),
-    [mutate]
+    [mutate, applyComments]
+  );
+
+  const dismiss = useCallback(
+    (id: string) =>
+      mutate(async () => {
+        const dismissed = await dismissComment(id);
+        applyComments((c) => c.map((x) => (x.id === id ? dismissed : x)));
+      }),
+    [mutate, applyComments]
   );
 
   const submitDrafts = useCallback(
@@ -182,7 +221,7 @@ export default function App() {
           ...(body ? { body } : {}),
         });
         const byId = new Map(flipped.map((c) => [c.id, c]));
-        setComments((c) => c.map((x) => byId.get(x.id) ?? x));
+        applyComments((c) => c.map((x) => byId.get(x.id) ?? x));
         setPopoverOpen(false);
         setApiError(null);
       } catch (error) {
@@ -205,7 +244,7 @@ export default function App() {
         setSubmitting(false);
       }
     },
-    [state, refreshDiff]
+    [state, refreshDiff, applyComments]
   );
 
   return (
@@ -321,6 +360,7 @@ export default function App() {
               onEditDraft={setEditingId}
               onSaveDraftBody={saveDraftBody}
               onDeleteDraft={removeDraft}
+              onDismiss={dismiss}
             />
           ))}
         </main>
@@ -370,6 +410,7 @@ interface FileSectionProps {
   onEditDraft: (id: string) => void;
   onSaveDraftBody: (id: string, body: string) => void;
   onDeleteDraft: (id: string) => void;
+  onDismiss: (id: string) => void;
 }
 
 function rangeTarget(file: string, range: SelectedLineRange): ComposerTarget {
@@ -389,6 +430,7 @@ function FileSection({
   onEditDraft,
   onSaveDraftBody,
   onDeleteDraft,
+  onDismiss,
 }: FileSectionProps) {
   const annotations = useMemo(() => {
     const out: DiffLineAnnotation<Anno>[] = [];
@@ -504,6 +546,7 @@ function FileSection({
               note={note}
               onEdit={note.status === 'draft' ? onEditDraft : undefined}
               onDelete={note.status === 'draft' ? onDeleteDraft : undefined}
+              onDismiss={note.status === 'open' ? onDismiss : undefined}
             />
           );
         }}
@@ -529,10 +572,12 @@ function CommentNote({
   note,
   onEdit,
   onDelete,
+  onDismiss,
 }: {
   note: Comment;
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
+  onDismiss?: (id: string) => void;
 }) {
   const chip = CHIPS[note.status];
   return (
@@ -540,7 +585,7 @@ function CommentNote({
       <div className="note-head">
         <span className={`chip ${chip.className}`}>{chip.label}</span>
         <span className="muted">{formatLines(note.anchor)}</span>
-        {(onEdit || onDelete) && (
+        {(onEdit || onDelete || onDismiss) && (
           <div className="note-actions">
             {onEdit && (
               <button className="ghost small" onClick={() => onEdit(note.id)}>
@@ -550,6 +595,15 @@ function CommentNote({
             {onDelete && (
               <button className="ghost small" onClick={() => onDelete(note.id)}>
                 Delete
+              </button>
+            )}
+            {onDismiss && (
+              <button
+                className="ghost small"
+                title="Retire this comment without a fix"
+                onClick={() => onDismiss(note.id)}
+              >
+                Dismiss
               </button>
             )}
           </div>

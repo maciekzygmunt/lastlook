@@ -202,6 +202,24 @@ describe('POST /api/reviews', () => {
     );
   });
 
+  it('GET /api/reviews/:id returns the pinned review, 404 on unknown id', async () => {
+    await createDraft();
+    const diff = await fetchDiff();
+    const submitted = await submit({
+      mode: 'uncommitted',
+      hash: diff.hash,
+      body: 'Overall: one nit.',
+    });
+    const { review } = (await submitted.json()) as SubmitResponse;
+
+    const res = await app.request(`/api/reviews/${review.id}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(review);
+
+    const missing = await app.request('/api/reviews/rev_01MISSINGMISSINGMISSINGMIS');
+    expect(missing.status).toBe(404);
+  });
+
   it('persists the review and open comments across a restart', async () => {
     await createDraft();
     const diff = await fetchDiff();

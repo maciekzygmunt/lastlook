@@ -122,6 +122,24 @@ export function createApp({ repoPath, version, dataDir, webDistDir }: AppContext
     return c.body(null, 204);
   });
 
+  // Terminal status flips (spec §5): resolve is the agent's, dismiss is the user's
+  for (const action of ['resolve', 'dismiss'] as const) {
+    app.post(`/api/comments/:id/${action}`, (c) => {
+      const comment = store.getComment(c.req.param('id'));
+      if (!comment) return c.json({ error: 'no such comment' }, 404);
+      if (comment.status !== 'open') {
+        return c.json({ error: `only open comments can be ${action}d — this one is ${comment.status}` }, 409);
+      }
+      return c.json(store.settleComment(comment.id, action === 'resolve' ? 'resolved' : 'dismissed'));
+    });
+  }
+
+  app.get('/api/reviews/:id', (c) => {
+    const review = store.getReview(c.req.param('id'));
+    if (!review) return c.json({ error: 'no such review' }, 404);
+    return c.json(review);
+  });
+
   app.post('/api/reviews', async (c) => {
     const payload = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
     const mode = payload?.mode;

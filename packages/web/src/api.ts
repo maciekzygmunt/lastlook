@@ -102,6 +102,10 @@ export function deleteDraft(id: string): Promise<void> {
   return request(`/api/comments/${id}`, { method: 'DELETE' });
 }
 
+export function dismissComment(id: string): Promise<Comment> {
+  return request(`/api/comments/${id}/dismiss`, { method: 'POST' });
+}
+
 export function submitReview(payload: {
   mode: DiffMode;
   params: Record<string, string>;

@@ -36,7 +36,7 @@ async function createDraft(body = 'Use a constant-time compare'): Promise<Commen
 }
 
 /** Seed data.json with a non-draft comment, bypassing the API. */
-function seedOpenComment(id: string): void {
+function seedComment(id: string, status: 'open' | 'resolved' | 'dismissed' = 'open'): void {
   const data = {
     version: 1,
     reviews: [],
@@ -44,11 +44,11 @@ function seedOpenComment(id: string): void {
       {
         id,
         reviewId: 'rev_01SEEDED',
-        status: 'open',
+        status,
         body: 'submitted earlier',
         anchor,
         createdAt: '2026-08-01T00:00:00.000Z',
-        resolvedAt: null,
+        resolvedAt: status === 'resolved' ? '2026-08-02T00:00:00.000Z' : null,
       },
     ],
   };
@@ -123,7 +123,7 @@ describe('GET /api/comments', () => {
   });
 
   it('filters by status', async () => {
-    seedOpenComment('cmt_01AAAAAAAAAAAAAAAAAAAAAAAA');
+    seedComment('cmt_01AAAAAAAAAAAAAAAAAAAAAAAA');
     app = makeApp();
     const draft = await createDraft();
 
@@ -190,7 +190,7 @@ describe('PATCH /api/comments/:id', () => {
   });
 
   it('409s on a non-draft comment', async () => {
-    seedOpenComment('cmt_01BBBBBBBBBBBBBBBBBBBBBBBB');
+    seedComment('cmt_01BBBBBBBBBBBBBBBBBBBBBBBB');
     app = makeApp();
     const res = await app.request('/api/comments/cmt_01BBBBBBBBBBBBBBBBBBBBBBBB', {
       method: 'PATCH',
@@ -218,12 +218,96 @@ describe('DELETE /api/comments/:id', () => {
   });
 
   it('409s on a non-draft comment', async () => {
-    seedOpenComment('cmt_01CCCCCCCCCCCCCCCCCCCCCCCC');
+    seedComment('cmt_01CCCCCCCCCCCCCCCCCCCCCCCC');
     app = makeApp();
     const res = await app.request('/api/comments/cmt_01CCCCCCCCCCCCCCCCCCCCCCCC', {
       method: 'DELETE',
     });
     expect(res.status).toBe(409);
+  });
+});
+
+describe('POST /api/comments/:id/resolve', () => {
+  it('flips an open comment to resolved and stamps resolvedAt', async () => {
+    seedComment('cmt_01DDDDDDDDDDDDDDDDDDDDDDDD');
+    app = makeApp();
+    const res = await app.request('/api/comments/cmt_01DDDDDDDDDDDDDDDDDDDDDDDD/resolve', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    const resolved = (await res.json()) as Comment;
+    expect(resolved.status).toBe('resolved');
+    expect(new Date(resolved.resolvedAt ?? '').toString()).not.toBe('Invalid Date');
+  });
+
+  it('persists the flip to data.json', async () => {
+    seedComment('cmt_01DDDDDDDDDDDDDDDDDDDDDDDD');
+    app = makeApp();
+    await app.request('/api/comments/cmt_01DDDDDDDDDDDDDDDDDDDDDDDD/resolve', {
+      method: 'POST',
+    });
+    const data = JSON.parse(readFileSync(join(dataDir, 'data.json'), 'utf8')) as {
+      comments: Comment[];
+    };
+    expect(data.comments[0]?.status).toBe('resolved');
+  });
+
+  it('404s on an unknown id', async () => {
+    const res = await app.request('/api/comments/cmt_01MISSINGMISSINGMISSINGMIS/resolve', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('409s on draft, resolved, and dismissed comments', async () => {
+    const draft = await createDraft();
+    const draftRes = await app.request(`/api/comments/${draft.id}/resolve`, { method: 'POST' });
+    expect(draftRes.status).toBe(409);
+
+    for (const status of ['resolved', 'dismissed'] as const) {
+      seedComment('cmt_01EEEEEEEEEEEEEEEEEEEEEEEE', status);
+      app = makeApp();
+      const res = await app.request('/api/comments/cmt_01EEEEEEEEEEEEEEEEEEEEEEEE/resolve', {
+        method: 'POST',
+      });
+      expect(res.status).toBe(409);
+    }
+  });
+});
+
+describe('POST /api/comments/:id/dismiss', () => {
+  it('flips an open comment to dismissed without stamping resolvedAt', async () => {
+    seedComment('cmt_01FFFFFFFFFFFFFFFFFFFFFFFF');
+    app = makeApp();
+    const res = await app.request('/api/comments/cmt_01FFFFFFFFFFFFFFFFFFFFFFFF/dismiss', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    const dismissed = (await res.json()) as Comment;
+    expect(dismissed.status).toBe('dismissed');
+    expect(dismissed.resolvedAt).toBeNull();
+  });
+
+  it('404s on an unknown id', async () => {
+    const res = await app.request('/api/comments/cmt_01MISSINGMISSINGMISSINGMIS/dismiss', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('409s on draft, resolved, and dismissed comments', async () => {
+    const draft = await createDraft();
+    const draftRes = await app.request(`/api/comments/${draft.id}/dismiss`, { method: 'POST' });
+    expect(draftRes.status).toBe(409);
+
+    for (const status of ['resolved', 'dismissed'] as const) {
+      seedComment('cmt_01GGGGGGGGGGGGGGGGGGGGGGGG', status);
+      app = makeApp();
+      const res = await app.request('/api/comments/cmt_01GGGGGGGGGGGGGGGGGGGGGGGG/dismiss', {
+        method: 'POST',
+      });
+      expect(res.status).toBe(409);
+    }
   });
 });
 
