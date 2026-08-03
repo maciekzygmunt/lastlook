@@ -17,7 +17,9 @@ const dist = makeDist();
 afterAll(() => rmSync(dist, { recursive: true, force: true }));
 
 function makeApp(webDistDir?: string) {
-  return createApp({ repoPath: '/tmp/some-repo', version: '0.1.0', webDistDir });
+  // dataDir is never written here — Store touches disk only on comment mutations
+  const dataDir = join(tmpdir(), 'reviewd-unused-data');
+  return createApp({ repoPath: '/tmp/some-repo', version: '0.1.0', dataDir, webDistDir });
 }
 
 describe('static web UI serving', () => {

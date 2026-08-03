@@ -50,7 +50,12 @@ async function main(): Promise<void> {
 
   const basePort = Number(process.env.REVIEWD_BASE_PORT ?? BASE_PORT);
   const port = await findFreePort(basePort);
-  const app = createApp({ repoPath, version: packageVersion(), webDistDir: webDistDir() });
+  const app = createApp({
+    repoPath,
+    version: packageVersion(),
+    dataDir: repoDir,
+    webDistDir: webDistDir(),
+  });
 
   serve({ fetch: app.fetch, port, hostname: '127.0.0.1' }, () => {
     writeServerJson(repoDir, {

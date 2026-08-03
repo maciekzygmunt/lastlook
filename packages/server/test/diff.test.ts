@@ -186,7 +186,8 @@ describe('computeDiff — errors', () => {
 
 describe('GET /api/diff', () => {
   function makeApp(repoPath: string) {
-    return createApp({ repoPath, version: '0.1.0' });
+    // dataDir is never written here — Store touches disk only on comment mutations
+    return createApp({ repoPath, version: '0.1.0', dataDir: join(tmpdir(), 'reviewd-unused-data') });
   }
 
   it('returns the full response shape for mode=uncommitted, reflecting an edit and a new file', async () => {
