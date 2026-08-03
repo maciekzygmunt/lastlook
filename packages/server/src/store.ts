@@ -8,12 +8,13 @@ export type Side = 'deletions' | 'additions';
 export const COMMENT_STATUSES = ['draft', 'open', 'resolved', 'dismissed'] as const;
 export type CommentStatus = (typeof COMMENT_STATUSES)[number];
 
+/** Line-anchored, or file-scoped (binary files, spec §6.3) with all four line fields null. */
 export interface CommentAnchor {
   file: string;
-  side: Side;
-  startLine: number;
-  endLine: number;
-  excerpt: string;
+  side: Side | null;
+  startLine: number | null;
+  endLine: number | null;
+  excerpt: string | null;
 }
 
 export interface Comment {

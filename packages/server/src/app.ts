@@ -1,8 +1,11 @@
 import { Hono } from 'hono';
 import {
+  DEFAULT_LIMITS,
   DIFF_MODES,
   DiffError,
   computeDiff,
+  extractFilePatch,
+  type DiffLimits,
   type DiffMode,
   type DiffParams,
 } from './diff.js';
@@ -19,6 +22,8 @@ export interface AppContext {
   version: string;
   dataDir: string;
   webDistDir?: string;
+  /** Spec §6.4 stub/cap thresholds; tests tune them down. */
+  limits?: DiffLimits;
 }
 
 export interface HealthResponse {
@@ -39,6 +44,10 @@ function parseAnchor(value: unknown): CommentAnchor | null {
   if (typeof value !== 'object' || value === null) return null;
   const a = value as Record<string, unknown>;
   if (typeof a.file !== 'string' || a.file === '') return null;
+  // File-scoped anchor (spec §6.3, binary files): every line field is null, together
+  if (a.side === null && a.startLine === null && a.endLine === null && a.excerpt === null) {
+    return { file: a.file, side: null, startLine: null, endLine: null, excerpt: null };
+  }
   if (a.side !== 'deletions' && a.side !== 'additions') return null;
   if (!Number.isInteger(a.startLine) || !Number.isInteger(a.endLine)) return null;
   if (typeof a.excerpt !== 'string') return null;
@@ -65,10 +74,20 @@ function parseDiffParams(value: unknown): DiffParams {
   return params;
 }
 
+function queryDiffParams(c: { req: { query: (key: string) => string | undefined } }): DiffParams {
+  return parseDiffParams({ base: c.req.query('base'), pr: c.req.query('pr') });
+}
+
 const ANCHOR_ERROR =
   'anchor must be {file, side: deletions|additions, startLine, endLine, excerpt}';
 
-export function createApp({ repoPath, version, dataDir, webDistDir }: AppContext): Hono {
+export function createApp({
+  repoPath,
+  version,
+  dataDir,
+  webDistDir,
+  limits = DEFAULT_LIMITS,
+}: AppContext): Hono {
   const app = new Hono();
   const store = new Store(dataDir);
 
@@ -80,12 +99,35 @@ export function createApp({ repoPath, version, dataDir, webDistDir }: AppContext
       return c.json({ error: `mode must be one of: ${DIFF_MODES.join(', ')}` }, 400);
     }
     try {
-      return c.json(
-        await computeDiff(repoPath, mode, parseDiffParams({
-          base: c.req.query('base'),
-          pr: c.req.query('pr'),
-        }))
-      );
+      const diff = await computeDiff(repoPath, mode, queryDiffParams(c), limits);
+      // Stub segments are withheld (spec §6.4); the full patch is pinned only at submit
+      return c.json({
+        mode: diff.mode,
+        params: diff.params,
+        hash: diff.hash,
+        headSha: diff.headSha,
+        patch: diff.visiblePatch,
+        files: diff.files,
+      });
+    } catch (error) {
+      if (error instanceof DiffError) return c.json({ error: error.message }, error.status);
+      throw error;
+    }
+  });
+
+  // Load-on-demand for stub files (spec §6.4): one file's full segment of the current diff
+  app.get('/api/diff/file', async (c) => {
+    const mode = c.req.query('mode');
+    if (!isDiffMode(mode)) {
+      return c.json({ error: `mode must be one of: ${DIFF_MODES.join(', ')}` }, 400);
+    }
+    const path = c.req.query('path');
+    if (!path) return c.json({ error: 'path must name a file in the current diff' }, 400);
+    try {
+      const diff = await computeDiff(repoPath, mode, queryDiffParams(c), limits);
+      const patch = extractFilePatch(diff.patch, path);
+      if (patch === null) return c.json({ error: `no file "${path}" in the current diff` }, 404);
+      return c.json({ path, patch });
     } catch (error) {
       if (error instanceof DiffError) return c.json({ error: error.message }, error.status);
       throw error;
@@ -173,7 +215,7 @@ export function createApp({ repoPath, version, dataDir, webDistDir }: AppContext
 
     let diff;
     try {
-      diff = await computeDiff(repoPath, mode, parseDiffParams(payload?.params));
+      diff = await computeDiff(repoPath, mode, parseDiffParams(payload?.params), limits);
     } catch (error) {
       if (error instanceof DiffError) return c.json({ error: error.message }, error.status);
       throw error;

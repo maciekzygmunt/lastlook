@@ -240,6 +240,29 @@ button.small {
   box-shadow: var(--ring);
 }
 
+/* Stub cards: binary files and collapsed large/generated diffs */
+.stub-card {
+  padding: 4px 0;
+}
+
+.stub-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  font-size: 12px;
+}
+
+.stub-head code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--text);
+}
+
+.stub-head button {
+  margin-left: auto;
+}
+
 .placeholder {
   color: var(--muted);
   font-size: 12.5px;

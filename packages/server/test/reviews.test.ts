@@ -248,6 +248,21 @@ describe('POST /api/reviews', () => {
     expect(missing.status).toBe(404);
   });
 
+  it('pins the full authoritative patch even when the diff response stubbed files', async () => {
+    writeFileSync(join(repo, 'package-lock.json'), '{\n  "version": 1\n}\n');
+    await createDraft();
+    const diff = await fetchDiff();
+    expect(diff.patch).not.toContain('"version": 1');
+
+    const res = await submit({ mode: 'uncommitted', hash: diff.hash });
+
+    expect(res.status).toBe(201);
+    const { review } = (await res.json()) as SubmitResponse;
+    expect(review.diffHash).toBe(diff.hash);
+    expect(review.patch).toContain('+  "version": 1');
+    expect(review.patch).toContain('+line 2 changed');
+  });
+
   it('persists the review and open comments across a restart', async () => {
     await createDraft();
     const diff = await fetchDiff();

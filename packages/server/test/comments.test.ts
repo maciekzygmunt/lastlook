@@ -106,6 +106,40 @@ describe('POST /api/comments', () => {
     }
   });
 
+  it('accepts a file-scoped anchor with side, lines, and excerpt all null (spec §6.3)', async () => {
+    const fileScoped = {
+      file: 'assets/logo.png',
+      side: null,
+      startLine: null,
+      endLine: null,
+      excerpt: null,
+    };
+    const res = await app.request('/api/comments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ body: 'is this artifact intentional?', anchor: fileScoped }),
+    });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as Comment).anchor).toEqual(fileScoped);
+  });
+
+  it('rejects an anchor mixing null and non-null line fields', async () => {
+    const bad = [
+      { ...anchor, excerpt: null },
+      { ...anchor, side: null },
+      { file: 'a.png', side: null, startLine: 1, endLine: 1, excerpt: null },
+      { file: 'a.png', side: null, startLine: null, endLine: null, excerpt: 'x' },
+    ];
+    for (const a of bad) {
+      const res = await app.request('/api/comments', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ body: 'note', anchor: a }),
+      });
+      expect(res.status).toBe(400);
+    }
+  });
+
   it('persists to data.json in the spec shape', async () => {
     const comment = await createDraft();
     const data = JSON.parse(readFileSync(join(dataDir, 'data.json'), 'utf8'));

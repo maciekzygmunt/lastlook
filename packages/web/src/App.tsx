@@ -15,18 +15,20 @@ import {
   dismissComment,
   fetchComments,
   fetchDiff,
+  fetchFilePatch,
   fetchHealth,
   submitReview,
   updateDraft,
   type Comment,
   type CommentAnchor,
+  type DiffFile,
   type DiffMode,
   type DiffResponse,
   type Side,
 } from './api';
 import { extractExcerpt } from './excerpt';
+import { formatBytes, formatLines } from './format';
 import { anchorRange } from './range';
-import { fileStatus } from './status';
 import './App.css';
 
 const MODES: { id: DiffMode; label: string }[] = [
@@ -49,6 +51,11 @@ interface ComposerTarget {
   endLine: number;
 }
 
+/** All-null line fields: the file-scoped anchor shape binary comments use (spec §6.3). */
+function fileScopedAnchor(file: string): CommentAnchor {
+  return { file, side: null, startLine: null, endLine: null, excerpt: null };
+}
+
 type Anno = { kind: 'composer' } | { kind: 'note'; note: Comment };
 
 export default function App() {
@@ -64,6 +71,10 @@ export default function App() {
   const [repoPath, setRepoPath] = useState('');
   const [comments, setComments] = useState<Comment[]>([]);
   const [composer, setComposer] = useState<ComposerTarget | null>(null);
+  // Binary files take one file-scoped comment; this holds the path whose composer is open
+  const [fileComposer, setFileComposer] = useState<string | null>(null);
+  // Stub files expanded on demand: path → that file's parsed patch segment
+  const [loadedStubs, setLoadedStubs] = useState<Record<string, FileDiffMetadata>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -114,6 +125,8 @@ export default function App() {
     let stale = false;
     setSelectedFile(null);
     setComposer(null);
+    setFileComposer(null);
+    setLoadedStubs({});
     if (mode === 'pr' && pr === '') {
       setState({ kind: 'prompt', message: 'Enter a PR number to load its diff.' });
       return;
@@ -135,18 +148,20 @@ export default function App() {
   /** Re-fetch the current mode's diff in place (409 recovery) without resetting focus. */
   const refreshDiff = useCallback(async () => {
     const diff = await fetchDiff(mode, params);
+    setLoadedStubs({});
     setState({ kind: 'ready', diff });
   }, [mode, params]);
 
-  const files = useMemo(
-    () =>
-      state.kind === 'ready'
-        ? parsePatchFiles(state.diff.patch).flatMap((p) => p.files)
-        : [],
-    [state]
-  );
+  // The response patch omits stub files (spec §6.4), so rendering is driven by the
+  // server's files[]; parsed segments back only the files whose content arrived.
+  const parsedByPath = useMemo(() => {
+    if (state.kind !== 'ready') return new Map<string, FileDiffMetadata>();
+    const parsed = parsePatchFiles(state.diff.patch).flatMap((p) => p.files);
+    return new Map(parsed.map((f) => [f.name, f]));
+  }, [state]);
 
-  const visibleFiles = selectedFile ? files.filter((f) => f.name === selectedFile) : files;
+  const files = state.kind === 'ready' ? state.diff.files : [];
+  const visibleFiles = selectedFile ? files.filter((f) => f.path === selectedFile) : files;
   const drafts = useMemo(() => comments.filter((c) => c.status === 'draft'), [comments]);
 
   // Inline notes: drafts and open always; resolved behind the toggle; dismissed never
@@ -160,11 +175,19 @@ export default function App() {
 
   const openComposer = useCallback((target: ComposerTarget) => {
     setComposer(target);
+    setFileComposer(null);
+    setEditingId(null);
+  }, []);
+
+  const openFileComposer = useCallback((path: string) => {
+    setFileComposer(path);
+    setComposer(null);
     setEditingId(null);
   }, []);
 
   const cancelComposer = useCallback(() => {
     setComposer(null);
+    setFileComposer(null);
     setEditingId(null);
   }, []);
 
@@ -184,12 +207,24 @@ export default function App() {
     }
   }, []);
 
+  const loadStub = useCallback(
+    (path: string) =>
+      mutate(async () => {
+        const { patch } = await fetchFilePatch(mode, params, path);
+        const parsed = parsePatchFiles(patch).flatMap((p) => p.files)[0];
+        if (!parsed) throw new Error(`could not parse the diff for ${path}`);
+        setLoadedStubs((prev) => ({ ...prev, [path]: parsed }));
+      }),
+    [mode, params, mutate]
+  );
+
   const addDraft = useCallback(
     (anchor: CommentAnchor, body: string) =>
       mutate(async () => {
         const created = await createDraft(body, anchor);
         applyComments((c) => [...c, created]);
         setComposer(null);
+        setFileComposer(null);
       }),
     [mutate, applyComments]
   );
@@ -383,24 +418,56 @@ export default function App() {
               </button>
             </div>
           )}
-          {visibleFiles.map((file) => (
-            <FileSection
-              key={file.name}
-              file={file}
-              diffStyle={diffStyle}
-              themeType={themeType}
-              notes={visibleComments.filter((n) => n.anchor.file === file.name)}
-              composer={composer?.file === file.name ? composer : null}
-              editingId={editingId}
-              onOpenComposer={openComposer}
-              onCancelComposer={cancelComposer}
-              onAddDraft={addDraft}
-              onEditDraft={setEditingId}
-              onSaveDraftBody={saveDraftBody}
-              onDeleteDraft={removeDraft}
-              onDismiss={dismiss}
-            />
-          ))}
+          {visibleFiles.map((file) => {
+            const notes = visibleComments.filter((n) => n.anchor.file === file.path);
+            if (file.binary) {
+              return (
+                <BinaryFileCard
+                  key={file.path}
+                  file={file}
+                  notes={notes}
+                  composerOpen={fileComposer === file.path}
+                  onOpenComposer={openFileComposer}
+                  onCancelComposer={cancelComposer}
+                  onAddDraft={addDraft}
+                  onDeleteDraft={removeDraft}
+                  onDismiss={dismiss}
+                />
+              );
+            }
+            const parsed = loadedStubs[file.path] ?? parsedByPath.get(file.path);
+            if (file.stub && !loadedStubs[file.path]) {
+              return (
+                <StubFileCard
+                  key={file.path}
+                  file={file}
+                  notes={notes}
+                  onLoad={loadStub}
+                  onDeleteDraft={removeDraft}
+                  onDismiss={dismiss}
+                />
+              );
+            }
+            if (!parsed) return null;
+            return (
+              <FileSection
+                key={file.path}
+                file={parsed}
+                diffStyle={diffStyle}
+                themeType={themeType}
+                notes={notes}
+                composer={composer?.file === file.path ? composer : null}
+                editingId={editingId}
+                onOpenComposer={openComposer}
+                onCancelComposer={cancelComposer}
+                onAddDraft={addDraft}
+                onEditDraft={setEditingId}
+                onSaveDraftBody={saveDraftBody}
+                onDeleteDraft={removeDraft}
+                onDismiss={dismiss}
+              />
+            );
+          })}
         </main>
       </div>
     </div>
@@ -449,12 +516,13 @@ function Tree({
   files,
   onSelect,
 }: {
-  files: FileDiffMetadata[];
+  files: DiffFile[];
   onSelect: (path: string | null) => void;
 }) {
-  const paths = useMemo(() => files.map((f) => f.name), [files]);
+  const paths = useMemo(() => files.map((f) => f.path), [files]);
+  // Renamed files list under their new path (spec §6.2) with the tree's rename badge
   const gitStatus = useMemo(
-    () => files.map((f) => ({ path: f.name, status: fileStatus(f) })),
+    () => files.map((f) => ({ path: f.path, status: f.status })),
     [files]
   );
   const { model } = useFileTree({
@@ -511,6 +579,8 @@ function FileSection({
   const annotations = useMemo(() => {
     const out: DiffLineAnnotation<Anno>[] = [];
     for (const n of notes) {
+      // File-scoped anchors (binary comments) have no line to attach to
+      if (n.anchor.side === null || n.anchor.endLine === null) continue;
       out.push({
         side: n.anchor.side,
         lineNumber: n.anchor.endLine,
@@ -631,10 +701,106 @@ function FileSection({
   );
 }
 
-function formatLines(anchor: CommentAnchor): string {
-  return anchor.startLine === anchor.endLine
-    ? `line ${anchor.endLine}`
-    : `lines ${anchor.startLine}–${anchor.endLine}`;
+/** Stub row for a binary change (spec §6.3): no diff, one file-level comment thread. */
+function BinaryFileCard({
+  file,
+  notes,
+  composerOpen,
+  onOpenComposer,
+  onCancelComposer,
+  onAddDraft,
+  onDeleteDraft,
+  onDismiss,
+}: {
+  file: DiffFile;
+  notes: Comment[];
+  composerOpen: boolean;
+  onOpenComposer: (path: string) => void;
+  onCancelComposer: () => void;
+  onAddDraft: (anchor: CommentAnchor, body: string) => void;
+  onDeleteDraft: (id: string) => void;
+  onDismiss: (id: string) => void;
+}) {
+  const label =
+    file.status === 'added'
+      ? 'Binary file added'
+      : file.status === 'deleted'
+        ? 'Binary file deleted'
+        : 'Binary file changed';
+  return (
+    <div className="file-section stub-card">
+      <div className="stub-head">
+        <code>
+          {file.oldPath ? `${file.oldPath} → ` : ''}
+          {file.path}
+        </code>
+        <span className="muted">
+          {label}
+          {file.size !== undefined && ` · ${formatBytes(file.size)}`}
+        </span>
+        {!composerOpen && notes.length === 0 && (
+          <button className="ghost small" onClick={() => onOpenComposer(file.path)}>
+            Comment
+          </button>
+        )}
+      </div>
+      {notes.map((note) => (
+        <CommentNote
+          key={note.id}
+          note={note}
+          onDelete={note.status === 'draft' ? onDeleteDraft : undefined}
+          onDismiss={note.status === 'open' ? onDismiss : undefined}
+        />
+      ))}
+      {composerOpen && (
+        <Composer
+          onSubmit={(body) => onAddDraft(fileScopedAnchor(file.path), body)}
+          onCancel={onCancelComposer}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Collapsed row for a large or generated file (spec §6.4); content loads on demand. */
+function StubFileCard({
+  file,
+  notes,
+  onLoad,
+  onDeleteDraft,
+  onDismiss,
+}: {
+  file: DiffFile;
+  notes: Comment[];
+  onLoad: (path: string) => void;
+  onDeleteDraft: (id: string) => void;
+  onDismiss: (id: string) => void;
+}) {
+  return (
+    <div className="file-section stub-card">
+      <div className="stub-head">
+        <code>
+          {file.oldPath ? `${file.oldPath} → ` : ''}
+          {file.path}
+        </code>
+        <span className="muted">
+          {file.changedLines.toLocaleString()} changed lines · collapsed (large or generated file)
+        </span>
+        <button className="ghost small" onClick={() => onLoad(file.path)}>
+          Load diff
+        </button>
+      </div>
+      {/* Comments on a still-collapsed file surface here rather than staying hidden */}
+      {notes.map((note) => (
+        <CommentNote
+          key={note.id}
+          note={note}
+          onDelete={note.status === 'draft' ? onDeleteDraft : undefined}
+          onDismiss={note.status === 'open' ? onDismiss : undefined}
+        />
+      ))}
+    </div>
+  );
 }
 
 const CHIPS: Record<Comment['status'], { className: string; label: string }> = {

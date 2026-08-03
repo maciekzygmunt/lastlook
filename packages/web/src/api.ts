@@ -1,12 +1,25 @@
 export type DiffMode = 'uncommitted' | 'branch' | 'pr' | 'last-commit';
 
+export type FileChangeStatus = 'added' | 'deleted' | 'renamed' | 'modified';
+
+export interface DiffFile {
+  path: string;
+  status: FileChangeStatus;
+  changedLines: number;
+  oldPath?: string;
+  binary?: boolean;
+  size?: number;
+  /** Patch content withheld from `patch` (spec §6.4); fetch it via fetchFilePatch. */
+  stub?: boolean;
+}
+
 export interface DiffResponse {
   mode: DiffMode;
   params: Record<string, string>;
   hash: string;
   headSha: string;
   patch: string;
-  files: { path: string }[];
+  files: DiffFile[];
 }
 
 export interface HealthResponse {
@@ -18,12 +31,13 @@ export interface HealthResponse {
 export type Side = 'deletions' | 'additions';
 export type CommentStatus = 'draft' | 'open' | 'resolved' | 'dismissed';
 
+/** Line-anchored, or file-scoped (binary files, spec §6.3) with all four line fields null. */
 export interface CommentAnchor {
   file: string;
-  side: Side;
-  startLine: number;
-  endLine: number;
-  excerpt: string;
+  side: Side | null;
+  startLine: number | null;
+  endLine: number | null;
+  excerpt: string | null;
 }
 
 export interface Comment {
@@ -81,6 +95,15 @@ export function fetchDiff(
   params: Record<string, string> = {}
 ): Promise<DiffResponse> {
   return request(`/api/diff?${new URLSearchParams({ mode, ...params })}`);
+}
+
+/** Load-on-demand for a stub file: its full patch segment from the current diff. */
+export function fetchFilePatch(
+  mode: DiffMode,
+  params: Record<string, string>,
+  path: string
+): Promise<{ path: string; patch: string }> {
+  return request(`/api/diff/file?${new URLSearchParams({ mode, ...params, path })}`);
 }
 
 export function fetchHealth(): Promise<HealthResponse> {
