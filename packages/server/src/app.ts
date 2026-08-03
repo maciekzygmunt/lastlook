@@ -1,5 +1,11 @@
 import { Hono } from 'hono';
-import { DIFF_MODES, DiffError, computeDiff, type DiffMode } from './diff.js';
+import {
+  DIFF_MODES,
+  DiffError,
+  computeDiff,
+  type DiffMode,
+  type DiffParams,
+} from './diff.js';
 import { mountWebUi } from './static.js';
 import {
   COMMENT_STATUSES,
@@ -49,6 +55,16 @@ function parseBody(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value : null;
 }
 
+/** Pick the known mode params out of a query or submit payload; unknown keys are dropped. */
+function parseDiffParams(value: unknown): DiffParams {
+  if (typeof value !== 'object' || value === null) return {};
+  const p = value as Record<string, unknown>;
+  const params: DiffParams = {};
+  if (typeof p.base === 'string') params.base = p.base;
+  if (typeof p.pr === 'string') params.pr = p.pr;
+  return params;
+}
+
 const ANCHOR_ERROR =
   'anchor must be {file, side: deletions|additions, startLine, endLine, excerpt}';
 
@@ -64,7 +80,12 @@ export function createApp({ repoPath, version, dataDir, webDistDir }: AppContext
       return c.json({ error: `mode must be one of: ${DIFF_MODES.join(', ')}` }, 400);
     }
     try {
-      return c.json(await computeDiff(repoPath, mode));
+      return c.json(
+        await computeDiff(repoPath, mode, parseDiffParams({
+          base: c.req.query('base'),
+          pr: c.req.query('pr'),
+        }))
+      );
     } catch (error) {
       if (error instanceof DiffError) return c.json({ error: error.message }, error.status);
       throw error;
@@ -152,7 +173,7 @@ export function createApp({ repoPath, version, dataDir, webDistDir }: AppContext
 
     let diff;
     try {
-      diff = await computeDiff(repoPath, mode);
+      diff = await computeDiff(repoPath, mode, parseDiffParams(payload?.params));
     } catch (error) {
       if (error instanceof DiffError) return c.json({ error: error.message }, error.status);
       throw error;

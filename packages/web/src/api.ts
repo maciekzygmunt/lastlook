@@ -1,4 +1,4 @@
-export type DiffMode = 'uncommitted' | 'last-commit';
+export type DiffMode = 'uncommitted' | 'branch' | 'pr' | 'last-commit';
 
 export interface DiffResponse {
   mode: DiffMode;
@@ -76,8 +76,11 @@ function jsonInit(method: string, payload: unknown): RequestInit {
   };
 }
 
-export function fetchDiff(mode: DiffMode): Promise<DiffResponse> {
-  return request(`/api/diff?mode=${mode}`);
+export function fetchDiff(
+  mode: DiffMode,
+  params: Record<string, string> = {}
+): Promise<DiffResponse> {
+  return request(`/api/diff?${new URLSearchParams({ mode, ...params })}`);
 }
 
 export function fetchHealth(): Promise<HealthResponse> {

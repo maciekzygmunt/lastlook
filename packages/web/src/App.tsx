@@ -29,19 +29,16 @@ import { anchorRange } from './range';
 import { fileStatus } from './status';
 import './App.css';
 
-type ModeSegment =
-  | { id: DiffMode; label: string; enabled: true }
-  | { id: 'branch' | 'pr'; label: string; enabled: false };
-
-const MODES: ModeSegment[] = [
-  { id: 'uncommitted', label: 'Uncommitted', enabled: true },
-  { id: 'branch', label: 'Branch vs base', enabled: false },
-  { id: 'pr', label: 'PR', enabled: false },
-  { id: 'last-commit', label: 'Last commit', enabled: true },
+const MODES: { id: DiffMode; label: string }[] = [
+  { id: 'uncommitted', label: 'Uncommitted' },
+  { id: 'branch', label: 'Branch vs base' },
+  { id: 'pr', label: 'PR' },
+  { id: 'last-commit', label: 'Last commit' },
 ];
 
 type DiffState =
   | { kind: 'loading' }
+  | { kind: 'prompt'; message: string }
   | { kind: 'error'; message: string }
   | { kind: 'ready'; diff: DiffResponse };
 
@@ -56,6 +53,10 @@ type Anno = { kind: 'composer' } | { kind: 'note'; note: Comment };
 
 export default function App() {
   const [mode, setMode] = useState<DiffMode>('uncommitted');
+  const [base, setBase] = useState('main');
+  const [pr, setPr] = useState('');
+  // Bumped on every param commit so re-loading the same value retries the fetch
+  const [paramAttempt, setParamAttempt] = useState(0);
   const [diffStyle, setDiffStyle] = useState<'unified' | 'split'>('split');
   const [themeType, setThemeType] = useState<ThemeTypes>('dark');
   const [state, setState] = useState<DiffState>({ kind: 'loading' });
@@ -100,12 +101,25 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
+  // Mode params sent to /api/diff; `base`/`pr` hold committed values (the
+  // inputs keep their own text until the user loads it)
+  const params = useMemo(() => {
+    const p: Record<string, string> = {};
+    if (mode === 'branch') p.base = base;
+    if (mode === 'pr') p.pr = pr;
+    return p;
+  }, [mode, base, pr]);
+
   useEffect(() => {
     let stale = false;
-    setState({ kind: 'loading' });
     setSelectedFile(null);
     setComposer(null);
-    fetchDiff(mode).then(
+    if (mode === 'pr' && pr === '') {
+      setState({ kind: 'prompt', message: 'Enter a PR number to load its diff.' });
+      return;
+    }
+    setState({ kind: 'loading' });
+    fetchDiff(mode, params).then(
       (diff) => {
         if (!stale) setState({ kind: 'ready', diff });
       },
@@ -116,13 +130,13 @@ export default function App() {
     return () => {
       stale = true;
     };
-  }, [mode]);
+  }, [mode, pr, params, paramAttempt]);
 
   /** Re-fetch the current mode's diff in place (409 recovery) without resetting focus. */
   const refreshDiff = useCallback(async () => {
-    const diff = await fetchDiff(mode);
+    const diff = await fetchDiff(mode, params);
     setState({ kind: 'ready', diff });
-  }, [mode]);
+  }, [mode, params]);
 
   const files = useMemo(
     () =>
@@ -258,14 +272,37 @@ export default function App() {
               <button
                 key={m.id}
                 className={mode === m.id ? 'active' : ''}
-                disabled={!m.enabled}
-                title={m.enabled ? undefined : 'Not available yet'}
-                onClick={() => m.enabled && setMode(m.id)}
+                onClick={() => setMode(m.id)}
               >
                 {m.label}
               </button>
             ))}
           </nav>
+          {mode === 'branch' && (
+            <ParamForm
+              key="base"
+              value={base}
+              placeholder="base branch"
+              ariaLabel="Base branch"
+              onCommit={(v) => {
+                setBase(v);
+                setParamAttempt((a) => a + 1);
+              }}
+            />
+          )}
+          {mode === 'pr' && (
+            <ParamForm
+              key="pr"
+              value={pr}
+              placeholder="PR number"
+              ariaLabel="PR number"
+              pattern="[0-9]+"
+              onCommit={(v) => {
+                setPr(v);
+                setParamAttempt((a) => a + 1);
+              }}
+            />
+          )}
         </div>
         <div className="topbar-right">
           <button
@@ -331,6 +368,7 @@ export default function App() {
 
         <main className="diffs">
           {state.kind === 'loading' && <p className="placeholder">Loading diff…</p>}
+          {state.kind === 'prompt' && <p className="placeholder">{state.message}</p>}
           {state.kind === 'error' && <p className="placeholder error">{state.message}</p>}
           {state.kind === 'ready' && files.length === 0 && (
             <p className="placeholder">No changes in this diff.</p>
@@ -366,6 +404,44 @@ export default function App() {
         </main>
       </div>
     </div>
+  );
+}
+
+/** Small topbar input whose value only takes effect on submit (Enter / Load). */
+function ParamForm({
+  value,
+  placeholder,
+  ariaLabel,
+  pattern,
+  onCommit,
+}: {
+  value: string;
+  placeholder: string;
+  ariaLabel: string;
+  pattern?: string;
+  onCommit: (value: string) => void;
+}) {
+  const [text, setText] = useState(value);
+  return (
+    <form
+      className="param-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onCommit(text.trim());
+      }}
+    >
+      <input
+        value={text}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        pattern={pattern}
+        required
+        onChange={(e) => setText(e.target.value)}
+      />
+      <button className="ghost small" type="submit">
+        Load
+      </button>
+    </form>
   );
 }
 

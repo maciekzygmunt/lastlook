@@ -156,6 +156,96 @@ describe('computeDiff — last-commit', () => {
   });
 });
 
+describe('computeDiff — branch', () => {
+  /** main with two commits, feature branched off the first with its own commit. */
+  function makeBranchedRepo(): string {
+    const repo = makeCommittedRepo();
+    git(repo, 'branch', '-M', 'main');
+    git(repo, 'checkout', '-qb', 'feature');
+    writeFileSync(join(repo, 'tracked.txt'), 'line 1\nline 2 feature\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-qm', 'feature work');
+    git(repo, 'checkout', '-q', 'main');
+    writeFileSync(join(repo, 'main-only.txt'), 'moved on\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-qm', 'main moved on');
+    git(repo, 'checkout', '-q', 'feature');
+    return repo;
+  }
+
+  it('diffs HEAD against the merge-base with base, not against base itself', async () => {
+    const repo = makeBranchedRepo();
+    // worktree noise must not leak into branch mode
+    writeFileSync(join(repo, 'noise.txt'), 'noise\n');
+
+    const diff = await computeDiff(repo, 'branch', { base: 'main' });
+
+    expect(diff.mode).toBe('branch');
+    expect(diff.params).toEqual({ base: 'main' });
+    expect(diff.patch).toContain('+line 2 feature');
+    // a diff vs main's tip would show main-only.txt as deleted
+    expect(diff.patch).not.toContain('main-only');
+    expect(diff.patch).not.toContain('noise');
+    expect(diff.files).toEqual([{ path: 'tracked.txt' }]);
+    expect(diff.headSha).toBe(git(repo, 'rev-parse', 'HEAD').trim());
+  });
+
+  it('fails with 400 when the base param is missing', async () => {
+    const repo = makeBranchedRepo();
+
+    const err = await computeDiff(repo, 'branch').catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(DiffError);
+    expect((err as DiffError).status).toBe(400);
+    expect((err as DiffError).message).toMatch(/base/i);
+  });
+
+  it('fails with 400 when the base branch does not exist', async () => {
+    const repo = makeBranchedRepo();
+
+    const err = await computeDiff(repo, 'branch', { base: 'no-such-branch' }).catch(
+      (e: unknown) => e
+    );
+
+    expect(err).toBeInstanceOf(DiffError);
+    expect((err as DiffError).status).toBe(400);
+    expect((err as DiffError).message).toMatch(/no-such-branch/);
+  });
+
+  it('fails with 400 when base and HEAD share no history', async () => {
+    const repo = makeBranchedRepo();
+    git(repo, 'checkout', '-q', '--orphan', 'lonely');
+    git(repo, 'commit', '-qm', 'orphan', '--allow-empty');
+    git(repo, 'checkout', '-q', 'feature');
+
+    const err = await computeDiff(repo, 'branch', { base: 'lonely' }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(DiffError);
+    expect((err as DiffError).status).toBe(400);
+    expect((err as DiffError).message).toMatch(/merge-base|unrelated/i);
+  });
+
+  it('GET /api/diff?mode=branch&base=… works and 400s without base', async () => {
+    const repo = makeBranchedRepo();
+    const app = createApp({
+      repoPath: repo,
+      version: '0.1.0',
+      dataDir: join(tmpdir(), 'reviewd-unused-data'),
+    });
+
+    const ok = await app.request('/api/diff?mode=branch&base=main');
+    expect(ok.status).toBe(200);
+    const body = (await ok.json()) as Record<string, unknown>;
+    expect(body.mode).toBe('branch');
+    expect(body.params).toEqual({ base: 'main' });
+    expect(body.patch).toContain('+line 2 feature');
+
+    const missing = await app.request('/api/diff?mode=branch');
+    expect(missing.status).toBe(400);
+    expect(((await missing.json()) as { error: string }).error).toMatch(/base/i);
+  });
+});
+
 describe('computeDiff — hash', () => {
   it('is stable for the same tree and changes when the diff changes', async () => {
     const repo = makeCommittedRepo();

@@ -118,6 +118,34 @@
   box-shadow: 0 0 0 1px var(--divider), 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
+.param-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.param-form input {
+  width: 120px;
+  border: none;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 9px;
+  border-radius: 7px;
+  transition-property: box-shadow;
+  transition-duration: 150ms;
+}
+
+.param-form input::placeholder {
+  color: var(--faint);
+}
+
+.param-form input:focus {
+  outline: none;
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
 /* ---------- buttons ---------- */
 
 button.ghost {

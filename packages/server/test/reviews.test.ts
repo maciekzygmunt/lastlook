@@ -179,6 +179,34 @@ describe('POST /api/reviews', () => {
     expect(((await res.json()) as { error: string }).error).toMatch(/parent|commit/i);
   });
 
+  it('pins the mode and params when submitting in branch mode', async () => {
+    git(repo, 'branch', '-M', 'main');
+    git(repo, 'checkout', '-qb', 'feature');
+    git(repo, 'commit', '-qam', 'feature work');
+    await createDraft('branch-mode comment');
+    const diffRes = await app.request('/api/diff?mode=branch&base=main');
+    expect(diffRes.status).toBe(200);
+    const diff = (await diffRes.json()) as DiffResponse;
+
+    const res = await submit({ mode: 'branch', params: { base: 'main' }, hash: diff.hash });
+
+    expect(res.status).toBe(201);
+    const { review } = (await res.json()) as SubmitResponse;
+    expect(review.mode).toBe('branch');
+    expect(review.params).toEqual({ base: 'main' });
+    expect(review.patch).toBe(diff.patch);
+  });
+
+  it('rejects a branch-mode submit that omits the base param', async () => {
+    git(repo, 'branch', '-M', 'main');
+    await createDraft();
+
+    const res = await submit({ mode: 'branch', params: {}, hash: 'irrelevant' });
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/base/i);
+  });
+
   it('allows a second review while the first still has open comments', async () => {
     await createDraft('round one');
     const first = await fetchDiff();
