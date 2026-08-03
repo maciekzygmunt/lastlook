@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatLines } from '../src/format';
+import { formatBytes, formatDate, formatLines } from '../src/format';
 
 describe('formatBytes', () => {
   it('renders bytes, KB, and MB at sensible precision', () => {
@@ -8,6 +8,15 @@ describe('formatBytes', () => {
     expect(formatBytes(2048)).toBe('2.0 KB');
     expect(formatBytes(1536)).toBe('1.5 KB');
     expect(formatBytes(3 * 1024 * 1024)).toBe('3.0 MB');
+  });
+});
+
+describe('formatDate', () => {
+  it('renders a short local timestamp with month, day, year, and time', () => {
+    // locale- and timezone-dependent, so assert the stable parts only
+    const label = formatDate('2026-08-03T12:34:00Z');
+    expect(label).toContain('2026');
+    expect(label).toMatch(/\d{1,2}:\d{2}/);
   });
 });
 

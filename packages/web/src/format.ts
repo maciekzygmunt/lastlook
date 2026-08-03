@@ -6,6 +6,17 @@ export function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
+/** Short local timestamp for review rows and the past-review banner. */
+export function formatDate(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 /** Human label for where a comment anchors: a line, a range, or the whole file (spec §6.3). */
 export function formatLines(anchor: CommentAnchor): string {
   if (anchor.startLine === null || anchor.endLine === null) return 'file';

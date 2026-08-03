@@ -17,6 +17,8 @@ import {
   fetchDiff,
   fetchFilePatch,
   fetchHealth,
+  fetchReview,
+  fetchReviews,
   submitReview,
   updateDraft,
   type Comment,
@@ -24,10 +26,12 @@ import {
   type DiffFile,
   type DiffMode,
   type DiffResponse,
+  type Review,
+  type ReviewSummary,
   type Side,
 } from './api';
 import { extractExcerpt } from './excerpt';
-import { formatBytes, formatLines } from './format';
+import { formatBytes, formatDate, formatLines } from './format';
 import { anchorRange } from './range';
 import './App.css';
 
@@ -58,6 +62,20 @@ function fileScopedAnchor(file: string): CommentAnchor {
 
 type Anno = { kind: 'composer' } | { kind: 'note'; note: Comment };
 
+/** Line annotations for a file's comments; file-scoped anchors have no line to attach to. */
+function noteAnnotations(notes: Comment[]): DiffLineAnnotation<Anno>[] {
+  const out: DiffLineAnnotation<Anno>[] = [];
+  for (const n of notes) {
+    if (n.anchor.side === null || n.anchor.endLine === null) continue;
+    out.push({
+      side: n.anchor.side,
+      lineNumber: n.anchor.endLine,
+      metadata: { kind: 'note', note: n },
+    });
+  }
+  return out;
+}
+
 export default function App() {
   const [mode, setMode] = useState<DiffMode>('uncommitted');
   const [base, setBase] = useState('main');
@@ -80,6 +98,9 @@ export default function App() {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [showResolved, setShowResolved] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [reviews, setReviews] = useState<ReviewSummary[]>([]);
+  // Non-null while the read-only past-review view is open (spec §7 Review history)
+  const [pastReview, setPastReview] = useState<Review | null>(null);
 
   // Bumped on every local comment mutation so a poll response started before
   // the mutation can't overwrite the fresher local state.
@@ -91,6 +112,7 @@ export default function App() {
       () => setRepoPath('')
     );
     fetchComments().then(setComments, (error: Error) => setApiError(error.message));
+    fetchReviews().then(setReviews, (error: Error) => setApiError(error.message));
   }, []);
 
   // Live status updates: the agent resolves comments out-of-band, so poll for
@@ -127,6 +149,8 @@ export default function App() {
     setComposer(null);
     setFileComposer(null);
     setLoadedStubs({});
+    // Touching the mode controls is a return to the current diff
+    setPastReview(null);
     if (mode === 'pr' && pr === '') {
       setState({ kind: 'prompt', message: 'Enter a PR number to load its diff.' });
       return;
@@ -257,6 +281,21 @@ export default function App() {
     [mutate, applyComments]
   );
 
+  const openPastReview = useCallback(
+    (id: string) =>
+      mutate(async () => {
+        const review = await fetchReview(id);
+        setPastReview(review);
+        setComposer(null);
+        setFileComposer(null);
+        setEditingId(null);
+        setPopoverOpen(false);
+      }),
+    [mutate]
+  );
+
+  const closePastReview = useCallback(() => setPastReview(null), []);
+
   const submitDrafts = useCallback(
     async (summary: string) => {
       if (state.kind !== 'ready') return;
@@ -273,6 +312,8 @@ export default function App() {
         applyComments((c) => c.map((x) => byId.get(x.id) ?? x));
         setPopoverOpen(false);
         setApiError(null);
+        // Submit created a review and may have pruned old ones — refresh the panel
+        fetchReviews().then(setReviews, () => {});
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {
           setPopoverOpen(false);
@@ -365,7 +406,7 @@ export default function App() {
           <div className="popover-wrap">
             <button
               className="primary"
-              disabled={state.kind !== 'ready' || drafts.length === 0}
+              disabled={state.kind !== 'ready' || drafts.length === 0 || pastReview !== null}
               title={drafts.length === 0 ? 'Draft a comment first' : undefined}
               onClick={() => setPopoverOpen((o) => !o)}
             >
@@ -396,11 +437,29 @@ export default function App() {
       <div className="body">
         <aside className="sidebar">
           {/* useFileTree treats paths as initial config, so remount whenever the diff changes */}
-          {state.kind === 'ready' && (
+          {pastReview === null && state.kind === 'ready' && (
             <Tree key={`${mode}:${state.diff.hash}`} files={files} onSelect={setSelectedFile} />
           )}
+          <ReviewsPanel
+            draftCount={drafts.length}
+            reviews={reviews}
+            activeId={pastReview?.id ?? null}
+            onSelect={openPastReview}
+            onCurrent={closePastReview}
+          />
         </aside>
 
+        {pastReview !== null ? (
+          <main className="diffs">
+            <PastReviewView
+              review={pastReview}
+              notes={comments.filter((c) => c.reviewId === pastReview.id)}
+              diffStyle={diffStyle}
+              themeType={themeType}
+              onBack={closePastReview}
+            />
+          </main>
+        ) : (
         <main className="diffs">
           {state.kind === 'loading' && <p className="placeholder">Loading diff…</p>}
           {state.kind === 'prompt' && <p className="placeholder">{state.message}</p>}
@@ -469,7 +528,141 @@ export default function App() {
             );
           })}
         </main>
+        )}
       </div>
+    </div>
+  );
+}
+
+/** Sidebar list of past reviews plus the pending-drafts row (spec §7 Review history). */
+function ReviewsPanel({
+  draftCount,
+  reviews,
+  activeId,
+  onSelect,
+  onCurrent,
+}: {
+  draftCount: number;
+  reviews: ReviewSummary[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  onCurrent: () => void;
+}) {
+  return (
+    <section className="reviews-panel">
+      <h2>Reviews</h2>
+      <button className={`review-row ${activeId === null ? 'active' : ''}`} onClick={onCurrent}>
+        <span>Current diff</span>
+        <span className="muted">
+          {draftCount === 0 ? 'No pending drafts' : `${draftCount} pending draft${draftCount === 1 ? '' : 's'}`}
+        </span>
+      </button>
+      {[...reviews].reverse().map((r) => (
+        <button
+          key={r.id}
+          className={`review-row ${activeId === r.id ? 'active' : ''}`}
+          onClick={() => onSelect(r.id)}
+        >
+          <span>{formatDate(r.submittedAt)}</span>
+          <span className="muted">
+            {r.commentCount} comment{r.commentCount === 1 ? '' : 's'} · {r.mode}
+          </span>
+        </button>
+      ))}
+      {reviews.length === 0 && <p className="muted">No submitted reviews yet.</p>}
+    </section>
+  );
+}
+
+/** Read-only rendering of a past review's pinned patch with its comments inline (spec §7). */
+function PastReviewView({
+  review,
+  notes,
+  diffStyle,
+  themeType,
+  onBack,
+}: {
+  review: Review;
+  notes: Comment[];
+  diffStyle: 'unified' | 'split';
+  themeType: ThemeTypes;
+  onBack: () => void;
+}) {
+  const files = useMemo(
+    () => parsePatchFiles(review.patch).flatMap((p) => p.files),
+    [review.patch]
+  );
+  const fileNames = useMemo(() => new Set(files.map((f) => f.name)), [files]);
+  // File-scoped comments (binary files) and any file the patch parser skipped
+  // have no diff line to attach to, so they render as standalone cards below.
+  const detached = notes.filter(
+    (n) => n.anchor.side === null || !fileNames.has(n.anchor.file)
+  );
+
+  return (
+    <>
+      <div className="past-banner">
+        <span>
+          Viewing past review · submitted {formatDate(review.submittedAt)} · {notes.length}{' '}
+          comment{notes.length === 1 ? '' : 's'}
+        </span>
+        <button className="ghost small" onClick={onBack}>
+          Back to current diff
+        </button>
+      </div>
+      {review.body && (
+        <div className="file-section review-summary">
+          <p>{review.body}</p>
+        </div>
+      )}
+      {files.map((file) => (
+        <PastFileSection
+          key={`${review.id}:${file.name}`}
+          file={file}
+          notes={notes.filter((n) => n.anchor.file === file.name && n.anchor.side !== null)}
+          diffStyle={diffStyle}
+          themeType={themeType}
+        />
+      ))}
+      {detached.map((note) => (
+        <div key={note.id} className="file-section stub-card">
+          <div className="stub-head">
+            <code>{note.anchor.file}</code>
+            <span className="muted">File-level comment</span>
+          </div>
+          <CommentNote note={note} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** The live view's diff card without any of its interaction: no selection, no composer. */
+function PastFileSection({
+  file,
+  notes,
+  diffStyle,
+  themeType,
+}: {
+  file: FileDiffMetadata;
+  notes: Comment[];
+  diffStyle: 'unified' | 'split';
+  themeType: ThemeTypes;
+}) {
+  const annotations = useMemo(() => noteAnnotations(notes), [notes]);
+
+  const options = useMemo(() => ({ diffStyle, themeType }), [diffStyle, themeType]);
+
+  return (
+    <div className="file-section">
+      <FileDiff<Anno>
+        fileDiff={file}
+        options={options}
+        lineAnnotations={annotations}
+        renderAnnotation={(a) =>
+          a.metadata.kind === 'note' ? <CommentNote note={a.metadata.note} /> : null
+        }
+      />
     </div>
   );
 }
@@ -577,16 +770,7 @@ function FileSection({
   onDismiss,
 }: FileSectionProps) {
   const annotations = useMemo(() => {
-    const out: DiffLineAnnotation<Anno>[] = [];
-    for (const n of notes) {
-      // File-scoped anchors (binary comments) have no line to attach to
-      if (n.anchor.side === null || n.anchor.endLine === null) continue;
-      out.push({
-        side: n.anchor.side,
-        lineNumber: n.anchor.endLine,
-        metadata: { kind: 'note', note: n },
-      });
-    }
+    const out = noteAnnotations(notes);
     if (composer) {
       out.push({
         side: composer.side,

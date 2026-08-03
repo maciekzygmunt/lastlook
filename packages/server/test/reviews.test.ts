@@ -248,6 +248,35 @@ describe('POST /api/reviews', () => {
     expect(missing.status).toBe(404);
   });
 
+  it('GET /api/reviews lists patch-free summaries with comment counts, oldest first', async () => {
+    await createDraft('first round, comment one');
+    await createDraft('first round, comment two');
+    const first = await fetchDiff();
+    const firstReview = ((await (
+      await submit({ mode: 'uncommitted', hash: first.hash, body: 'round one' })
+    ).json()) as SubmitResponse).review;
+
+    writeFileSync(join(repo, 'tracked.txt'), 'line 1\nline 2 round two\n');
+    await createDraft('second round');
+    const second = await fetchDiff();
+    const secondReview = ((await (
+      await submit({ mode: 'uncommitted', hash: second.hash })
+    ).json()) as SubmitResponse).review;
+
+    const res = await app.request('/api/reviews');
+    expect(res.status).toBe(200);
+    const { reviews } = (await res.json()) as { reviews: Record<string, unknown>[] };
+    expect(reviews.map((r) => r.id)).toEqual([firstReview.id, secondReview.id]);
+    expect(reviews.map((r) => r.commentCount)).toEqual([2, 1]);
+    expect(reviews[0]).not.toHaveProperty('patch');
+    expect(reviews[0]).toMatchObject({
+      submittedAt: firstReview.submittedAt,
+      mode: 'uncommitted',
+      body: 'round one',
+      diffHash: firstReview.diffHash,
+    });
+  });
+
   it('pins the full authoritative patch even when the diff response stubbed files', async () => {
     writeFileSync(join(repo, 'package-lock.json'), '{\n  "version": 1\n}\n');
     await createDraft();

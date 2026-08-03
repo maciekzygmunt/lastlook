@@ -197,6 +197,9 @@ export function createApp({
     });
   }
 
+  // Patch-free summaries for the sidebar Reviews panel; the pinned patch comes via /:id
+  app.get('/api/reviews', (c) => c.json({ reviews: store.listReviewSummaries() }));
+
   app.get('/api/reviews/:id', (c) => {
     const review = store.getReview(c.req.param('id'));
     if (!review) return c.json({ error: 'no such review' }, 404);

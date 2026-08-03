@@ -41,6 +41,9 @@ export interface Review {
 
 export type ReviewSnapshot = Omit<Review, 'id' | 'submittedAt'>;
 
+/** Patch-free listing shape for the sidebar Reviews panel. */
+export type ReviewSummary = Omit<Review, 'patch'> & { commentCount: number };
+
 interface DataFile {
   version: 1;
   reviews: Review[];
@@ -48,6 +51,9 @@ interface DataFile {
 }
 
 const EMPTY: DataFile = { version: 1, reviews: [], comments: [] };
+
+/** Retention bound (spec §5): at most this many fully-settled reviews survive a submit. */
+const MAX_SETTLED_REVIEWS = 5;
 
 /** Per-repo comment/review storage backed by data.json in the repo's data dir (spec §2). */
 export class Store {
@@ -104,8 +110,28 @@ export class Store {
       flipped.push(comment);
     }
     data.reviews.push(review);
+    this.prune(data);
     this.save();
     return { review, comments: flipped };
+  }
+
+  /**
+   * Retention (spec §5): drop oldest-first so at most MAX_SETTLED_REVIEWS fully-settled
+   * reviews remain, taking their comments along. A review with any open comment is
+   * never pruned, regardless of age. Silent — there is no delete endpoint.
+   */
+  private prune(data: DataFile): void {
+    const openReviewIds = new Set(
+      data.comments.filter((c) => c.status === 'open').map((c) => c.reviewId)
+    );
+    const settled = data.reviews.filter((r) => !openReviewIds.has(r.id));
+    const excess = settled.length - MAX_SETTLED_REVIEWS;
+    if (excess <= 0) return;
+    const pruned = new Set(settled.slice(0, excess).map((r) => r.id));
+    data.reviews = data.reviews.filter((r) => !pruned.has(r.id));
+    data.comments = data.comments.filter(
+      (c) => c.reviewId === null || !pruned.has(c.reviewId)
+    );
   }
 
   /** Flip an open comment to its settled status; resolve stamps resolvedAt, dismiss doesn't. */
@@ -120,6 +146,24 @@ export class Store {
 
   getReview(id: string): Review | undefined {
     return this.load().reviews.find((r) => r.id === id);
+  }
+
+  listReviews(): Review[] {
+    return [...this.load().reviews];
+  }
+
+  listReviewSummaries(): ReviewSummary[] {
+    const data = this.load();
+    const counts = new Map<string, number>();
+    for (const comment of data.comments) {
+      if (comment.reviewId !== null) {
+        counts.set(comment.reviewId, (counts.get(comment.reviewId) ?? 0) + 1);
+      }
+    }
+    return data.reviews.map(({ patch: _patch, ...review }) => ({
+      ...review,
+      commentCount: counts.get(review.id) ?? 0,
+    }));
   }
 
   deleteComment(id: string): void {

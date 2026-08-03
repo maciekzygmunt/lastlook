@@ -61,6 +61,11 @@ export interface Review {
   body: string | null;
 }
 
+/** Patch-free summary from GET /api/reviews — feeds the sidebar Reviews panel. */
+export interface ReviewSummary extends Omit<Review, 'patch'> {
+  commentCount: number;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -130,6 +135,16 @@ export function deleteDraft(id: string): Promise<void> {
 
 export function dismissComment(id: string): Promise<Comment> {
   return request(`/api/comments/${id}/dismiss`, { method: 'POST' });
+}
+
+export async function fetchReviews(): Promise<ReviewSummary[]> {
+  const { reviews } = await request<{ reviews: ReviewSummary[] }>('/api/reviews');
+  return reviews;
+}
+
+/** The full pinned review, patch included — the past-review view renders from this. */
+export function fetchReview(id: string): Promise<Review> {
+  return request(`/api/reviews/${id}`);
 }
 
 export function submitReview(payload: {
