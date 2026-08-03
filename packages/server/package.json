@@ -2,6 +2,12 @@
   "name": "@reviewd/server",
   "version": "0.1.0",
   "description": "reviewd — local diff-review server",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maciekzygmunt/diff.git",
+    "directory": "packages/server"
+  },
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -14,7 +20,8 @@
   ],
   "scripts": {
     "dev": "tsx src/cli.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-web.mjs",
+    "prepack": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

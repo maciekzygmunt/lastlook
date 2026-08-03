@@ -1,13 +1,40 @@
 import { serve } from '@hono/node-server';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import { createApp } from './app.js';
+import { openBrowser } from './browser.js';
 import { repoDataDir } from './paths.js';
 import { BASE_PORT, findFreePort } from './port.js';
-import { isHealthy, readServerJson, removeServerJson, writeServerJson } from './serverJson.js';
+import {
+  isHealthy,
+  readServerJson,
+  removeServerJson,
+  writeServerJson,
+  type ServerJson,
+} from './serverJson.js';
+
+interface CliFlags {
+  open: boolean;
+  force: boolean;
+}
+
+function parseFlags(): CliFlags {
+  try {
+    const { values } = parseArgs({
+      args: process.argv.slice(2),
+      options: { open: { type: 'boolean' }, force: { type: 'boolean' } },
+    });
+    return { open: values.open ?? false, force: values.force ?? false };
+  } catch (err) {
+    console.error(`reviewd: ${(err as Error).message}`);
+    console.error('usage: reviewd [--open] [--force]');
+    process.exit(1);
+  }
+}
 
 function resolveRepoRoot(): string {
   try {
@@ -30,6 +57,10 @@ function packageVersion(): string {
 }
 
 function webDistDir(): string | undefined {
+  // packed layout first: dist/web ships inside the npm package next to this file
+  const bundled = join(dirname(fileURLToPath(import.meta.url)), 'web');
+  if (existsSync(join(bundled, 'index.html'))) return bundled;
+  // dev fallback: the workspace sibling's build output
   try {
     const require = createRequire(import.meta.url);
     return join(dirname(require.resolve('@reviewd/web/package.json')), 'dist');
@@ -38,14 +69,36 @@ function webDistDir(): string | undefined {
   }
 }
 
+/** SIGTERM the recorded pid, then wait for its port to stop answering health. */
+async function killServer(info: ServerJson): Promise<void> {
+  try {
+    process.kill(info.pid, 'SIGTERM');
+  } catch {
+    return; // already gone
+  }
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (!(await isHealthy(info))) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  console.error(`reviewd: existing server (pid ${info.pid}) did not stop within 5s`);
+  process.exit(1);
+}
+
 async function main(): Promise<void> {
+  const flags = parseFlags();
   const repoPath = resolveRepoRoot();
   const repoDir = repoDataDir(repoPath);
 
   const existing = readServerJson(repoDir);
   if (existing && (await isHealthy(existing))) {
-    console.log(`reviewd already running for ${repoPath} — http://localhost:${existing.port}`);
-    return;
+    if (!flags.force) {
+      const url = `http://localhost:${existing.port}`;
+      console.log(`reviewd already running for ${repoPath} — ${url}`);
+      if (flags.open) openBrowser(url);
+      return;
+    }
+    await killServer(existing);
   }
 
   const basePort = Number(process.env.REVIEWD_BASE_PORT ?? BASE_PORT);
@@ -65,6 +118,7 @@ async function main(): Promise<void> {
       startedAt: new Date().toISOString(),
     });
     console.log(`reviewd — ${repoPath} — http://localhost:${port}`);
+    if (flags.open) openBrowser(`http://localhost:${port}`);
   });
 
   const shutdown = (): void => {

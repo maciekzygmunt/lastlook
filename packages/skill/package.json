@@ -1,9 +1,0 @@
-{
-  "name": "@reviewd/skill",
-  "version": "0.1.0",
-  "description": "reviewd — resolve-review agent skill (placeholder; written in a later ticket)",
-  "private": true,
-  "engines": {
-    "node": ">=20"
-  }
-}

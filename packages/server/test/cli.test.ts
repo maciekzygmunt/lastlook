@@ -9,7 +9,7 @@ import { realpathSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { repoDataDir } from '../src/paths.js';
 import { serverJsonPath as serverJsonIn } from '../src/serverJson.js';
-import { closeAll, listenOn } from './helpers.js';
+import { closeAll, listenOn, waitFor } from './helpers.js';
 
 const CLI = join(import.meta.dirname, '..', 'src', 'cli.ts');
 // --import with an absolute file URL keeps the CLI in a single process (tsx's
@@ -40,10 +40,16 @@ function makeDataDir(): string {
   return dir;
 }
 
-function launch(repo: string, dataDir: string, basePort: number): Launched {
-  const proc = spawn(process.execPath, ['--import', TSX_LOADER, CLI], {
+function launch(
+  repo: string,
+  dataDir: string,
+  basePort: number,
+  args: string[] = [],
+  env: Record<string, string> = {}
+): Launched {
+  const proc = spawn(process.execPath, ['--import', TSX_LOADER, CLI, ...args], {
     cwd: repo,
-    env: { ...process.env, REVIEWD_DATA_DIR: dataDir, REVIEWD_BASE_PORT: String(basePort) },
+    env: { ...process.env, REVIEWD_DATA_DIR: dataDir, REVIEWD_BASE_PORT: String(basePort), ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   children.push(proc);
@@ -52,14 +58,6 @@ function launch(repo: string, dataDir: string, basePort: number): Launched {
   proc.stderr!.on('data', (chunk) => (out += chunk));
   const exited = new Promise<number | null>((resolve) => proc.once('exit', resolve));
   return { proc, output: () => out, exited };
-}
-
-async function waitFor(cond: () => boolean, ms = 10_000): Promise<void> {
-  const deadline = Date.now() + ms;
-  while (!cond()) {
-    if (Date.now() > deadline) throw new Error('timed out waiting for condition');
-    await new Promise((r) => setTimeout(r, 50));
-  }
 }
 
 async function occupy(port: number): Promise<void> {
@@ -138,6 +136,52 @@ describe('reviewd CLI lifecycle', () => {
     expect(health.ok).toBe(true);
     const sj = JSON.parse(readFileSync(serverJsonPath(repo, dataDir), 'utf8'));
     expect(sj.pid).toBe(first.proc.pid);
+  });
+
+  it('--force replaces a healthy existing server', { timeout: 20_000 }, async () => {
+    const repo = makeRepo();
+    const dataDir = makeDataDir();
+    const first = launch(repo, dataDir, 25780);
+    await waitFor(() => first.output().includes('http://'));
+
+    const second = launch(repo, dataDir, 25780, ['--force']);
+    await waitFor(() => second.output().includes('http://'));
+    expect(await first.exited).toBe(0);
+
+    const sj = JSON.parse(readFileSync(serverJsonPath(repo, dataDir), 'utf8'));
+    expect(sj.pid).toBe(second.proc.pid);
+    const health = (await (await fetch(`http://localhost:${sj.port}/api/health`)).json()) as Record<
+      string,
+      unknown
+    >;
+    expect(health.ok).toBe(true);
+  });
+
+  it('--open launches $BROWSER with the URL; default does not', { timeout: 20_000 }, async () => {
+    const repo = makeRepo();
+    const dataDir = makeDataDir();
+    const marker = join(makeDataDir(), 'opened-url');
+    const opener = join(makeDataDir(), 'fake-browser.sh');
+    writeFileSync(opener, `#!/bin/sh\necho "$1" > ${JSON.stringify(marker)}\n`, { mode: 0o755 });
+
+    const plain = launch(repo, dataDir, 25800, [], { BROWSER: opener });
+    await waitFor(() => plain.output().includes('http://'));
+    expect(existsSync(marker)).toBe(false);
+    plain.proc.kill('SIGINT');
+    await plain.exited;
+
+    const opened = launch(repo, dataDir, 25800, ['--open'], { BROWSER: opener });
+    await waitFor(() => existsSync(marker));
+    expect(readFileSync(marker, 'utf8').trim()).toBe('http://localhost:25800');
+    expect(opened.output().trim().split('\n')).toHaveLength(1);
+  });
+
+  it('rejects unknown flags with usage', { timeout: 20_000 }, async () => {
+    const repo = makeRepo();
+    const dataDir = makeDataDir();
+    const run = launch(repo, dataDir, 25820, ['--bogus']);
+    expect(await run.exited).toBe(1);
+    expect(run.output()).toContain('usage: reviewd');
   });
 
   it('silently replaces a stale server.json', { timeout: 20_000 }, async () => {
