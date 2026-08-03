@@ -36,13 +36,34 @@ export interface Comment {
   resolvedAt: string | null;
 }
 
+export interface Review {
+  id: string;
+  submittedAt: string;
+  mode: DiffMode;
+  params: Record<string, string>;
+  headSha: string;
+  diffHash: string;
+  patch: string;
+  body: string | null;
+}
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     const message = (body as { error?: string } | null)?.error;
-    throw new Error(message ?? `${url} failed with ${res.status}`);
+    throw new ApiError(res.status, message ?? `${url} failed with ${res.status}`);
   }
   return body as T;
 }
@@ -79,4 +100,13 @@ export function updateDraft(id: string, patch: { body?: string; anchor?: Comment
 
 export function deleteDraft(id: string): Promise<void> {
   return request(`/api/comments/${id}`, { method: 'DELETE' });
+}
+
+export function submitReview(payload: {
+  mode: DiffMode;
+  params: Record<string, string>;
+  hash: string;
+  body?: string;
+}): Promise<{ review: Review; comments: Comment[] }> {
+  return request('/api/reviews', jsonInit('POST', payload));
 }

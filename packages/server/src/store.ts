@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ulid } from 'ulid';
+import type { DiffMode } from './diff.js';
 
 export type Side = 'deletions' | 'additions';
 
@@ -25,9 +26,23 @@ export interface Comment {
   resolvedAt: string | null;
 }
 
+/** Immutable snapshot pinned at submit (spec §4): the patch the comments were written against. */
+export interface Review {
+  id: string;
+  submittedAt: string;
+  mode: DiffMode;
+  params: Record<string, string>;
+  headSha: string;
+  diffHash: string;
+  patch: string;
+  body: string | null;
+}
+
+export type ReviewSnapshot = Omit<Review, 'id' | 'submittedAt'>;
+
 interface DataFile {
   version: 1;
-  reviews: unknown[]; // review shape lands with ticket 13; kept so data.json matches the spec from day one
+  reviews: Review[];
   comments: Comment[];
 }
 
@@ -70,6 +85,26 @@ export class Store {
     if (patch.anchor !== undefined) comment.anchor = patch.anchor;
     this.save();
     return comment;
+  }
+
+  /** Pin the snapshot as a new review and flip every draft to open under it. */
+  submitReview(snapshot: ReviewSnapshot): { review: Review; comments: Comment[] } {
+    const data = this.load();
+    const review: Review = {
+      id: `rev_${ulid()}`,
+      submittedAt: new Date().toISOString(),
+      ...snapshot,
+    };
+    const flipped: Comment[] = [];
+    for (const comment of data.comments) {
+      if (comment.status !== 'draft') continue;
+      comment.status = 'open';
+      comment.reviewId = review.id;
+      flipped.push(comment);
+    }
+    data.reviews.push(review);
+    this.save();
+    return { review, comments: flipped };
   }
 
   deleteComment(id: string): void {

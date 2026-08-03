@@ -122,6 +122,46 @@ export function createApp({ repoPath, version, dataDir, webDistDir }: AppContext
     return c.body(null, 204);
   });
 
+  app.post('/api/reviews', async (c) => {
+    const payload = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+    const mode = payload?.mode;
+    if (typeof mode !== 'string' || !isDiffMode(mode)) {
+      return c.json({ error: `mode must be one of: ${DIFF_MODES.join(', ')}` }, 400);
+    }
+    if (typeof payload?.hash !== 'string' || payload.hash === '') {
+      return c.json({ error: 'hash must be the hash from the last GET /api/diff' }, 400);
+    }
+
+    let diff;
+    try {
+      diff = await computeDiff(repoPath, mode);
+    } catch (error) {
+      if (error instanceof DiffError) return c.json({ error: error.message }, error.status);
+      throw error;
+    }
+    // Checked after the await: a concurrent submit may have flipped the drafts meanwhile
+    if (store.listComments('draft').length === 0) {
+      return c.json({ error: 'no draft comments to submit' }, 400);
+    }
+    // Hash-drift guard (spec §5): the pinned snapshot must be exactly what the user reviewed
+    if (diff.hash !== payload.hash) {
+      return c.json(
+        { error: 'the diff changed since it was last fetched — refresh and re-submit' },
+        409
+      );
+    }
+
+    const result = store.submitReview({
+      mode: diff.mode,
+      params: diff.params,
+      headSha: diff.headSha,
+      diffHash: diff.hash,
+      patch: diff.patch,
+      body: parseBody(payload.body),
+    });
+    return c.json(result, 201);
+  });
+
   // Mounted last: the catch-all must not shadow /api routes
   if (webDistDir) mountWebUi(app, webDistDir);
 

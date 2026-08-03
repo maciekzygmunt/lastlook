@@ -9,11 +9,13 @@ import type {
 import { FileDiff } from '@pierre/diffs/react';
 import { FileTree, useFileTree } from '@pierre/trees/react';
 import {
+  ApiError,
   createDraft,
   deleteDraft,
   fetchComments,
   fetchDiff,
   fetchHealth,
+  submitReview,
   updateDraft,
   type Comment,
   type CommentAnchor,
@@ -49,7 +51,7 @@ interface ComposerTarget {
   endLine: number;
 }
 
-type Anno = { kind: 'composer' } | { kind: 'draft'; draft: Comment };
+type Anno = { kind: 'composer' } | { kind: 'note'; note: Comment };
 
 export default function App() {
   const [mode, setMode] = useState<DiffMode>('uncommitted');
@@ -62,6 +64,9 @@ export default function App() {
   const [composer, setComposer] = useState<ComposerTarget | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [showResolved, setShowResolved] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchHealth().then(
@@ -89,6 +94,12 @@ export default function App() {
     };
   }, [mode]);
 
+  /** Re-fetch the current mode's diff in place (409 recovery) without resetting focus. */
+  const refreshDiff = useCallback(async () => {
+    const diff = await fetchDiff(mode);
+    setState({ kind: 'ready', diff });
+  }, [mode]);
+
   const files = useMemo(
     () =>
       state.kind === 'ready'
@@ -99,6 +110,15 @@ export default function App() {
 
   const visibleFiles = selectedFile ? files.filter((f) => f.name === selectedFile) : files;
   const drafts = useMemo(() => comments.filter((c) => c.status === 'draft'), [comments]);
+
+  // Inline notes: drafts and open always; resolved behind the toggle; dismissed never
+  const visibleComments = useMemo(
+    () =>
+      comments.filter(
+        (c) => c.status === 'draft' || c.status === 'open' || (c.status === 'resolved' && showResolved)
+      ),
+    [comments, showResolved]
+  );
 
   const openComposer = useCallback((target: ComposerTarget) => {
     setComposer(target);
@@ -149,6 +169,45 @@ export default function App() {
     [mutate]
   );
 
+  const submitDrafts = useCallback(
+    async (summary: string) => {
+      if (state.kind !== 'ready') return;
+      setSubmitting(true);
+      try {
+        const body = summary.trim();
+        const { comments: flipped } = await submitReview({
+          mode: state.diff.mode,
+          params: state.diff.params,
+          hash: state.diff.hash,
+          ...(body ? { body } : {}),
+        });
+        const byId = new Map(flipped.map((c) => [c.id, c]));
+        setComments((c) => c.map((x) => byId.get(x.id) ?? x));
+        setPopoverOpen(false);
+        setApiError(null);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 409) {
+          setPopoverOpen(false);
+          try {
+            await refreshDiff();
+            setApiError(
+              'The diff changed since it was loaded — refreshed. Your drafts are kept; review and submit again.'
+            );
+          } catch {
+            setApiError(
+              'The diff changed since it was loaded, and refreshing it failed — reload the page. Your drafts are kept.'
+            );
+          }
+        } else {
+          setApiError((error as Error).message);
+        }
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [state, refreshDiff]
+  );
+
   return (
     <div className="app" data-theme={themeType}>
       <header className="topbar">
@@ -184,10 +243,33 @@ export default function App() {
           >
             {themeType === 'dark' ? 'Dark' : 'Light'}
           </button>
-          <button className="primary" disabled title="Submitting reviews lands with ticket 13">
-            Review changes
-            {drafts.length > 0 && <span className="badge">{drafts.length}</span>}
-          </button>
+          <label className="toggle" title="Show or hide resolved comments">
+            <input
+              type="checkbox"
+              checked={showResolved}
+              onChange={(e) => setShowResolved(e.target.checked)}
+            />
+            Resolved
+          </label>
+          <div className="popover-wrap">
+            <button
+              className="primary"
+              disabled={state.kind !== 'ready' || drafts.length === 0}
+              title={drafts.length === 0 ? 'Draft a comment first' : undefined}
+              onClick={() => setPopoverOpen((o) => !o)}
+            >
+              Review changes
+              {drafts.length > 0 && <span className="badge">{drafts.length}</span>}
+            </button>
+            {popoverOpen && (
+              <ReviewPopover
+                drafts={drafts}
+                submitting={submitting}
+                onSubmit={submitDrafts}
+                onClose={() => setPopoverOpen(false)}
+              />
+            )}
+          </div>
         </div>
       </header>
 
@@ -230,7 +312,7 @@ export default function App() {
               file={file}
               diffStyle={diffStyle}
               themeType={themeType}
-              drafts={drafts.filter((d) => d.anchor.file === file.name)}
+              notes={visibleComments.filter((n) => n.anchor.file === file.name)}
               composer={composer?.file === file.name ? composer : null}
               editingId={editingId}
               onOpenComposer={openComposer}
@@ -279,7 +361,7 @@ interface FileSectionProps {
   file: FileDiffMetadata;
   diffStyle: 'unified' | 'split';
   themeType: ThemeTypes;
-  drafts: Comment[];
+  notes: Comment[];
   composer: ComposerTarget | null;
   editingId: string | null;
   onOpenComposer: (target: ComposerTarget) => void;
@@ -298,7 +380,7 @@ function FileSection({
   file,
   diffStyle,
   themeType,
-  drafts,
+  notes,
   composer,
   editingId,
   onOpenComposer,
@@ -310,11 +392,11 @@ function FileSection({
 }: FileSectionProps) {
   const annotations = useMemo(() => {
     const out: DiffLineAnnotation<Anno>[] = [];
-    for (const d of drafts) {
+    for (const n of notes) {
       out.push({
-        side: d.anchor.side,
-        lineNumber: d.anchor.endLine,
-        metadata: { kind: 'draft', draft: d },
+        side: n.anchor.side,
+        lineNumber: n.anchor.endLine,
+        metadata: { kind: 'note', note: n },
       });
     }
     if (composer) {
@@ -325,7 +407,7 @@ function FileSection({
       });
     }
     return out;
-  }, [drafts, composer]);
+  }, [notes, composer]);
 
   const selectedLines: SelectedLineRange | null = composer
     ? {
@@ -360,7 +442,12 @@ function FileSection({
     [diffStyle, themeType, file.name, onOpenComposer]
   );
 
-  const draftCount = drafts.length;
+  const openCount = notes.filter((n) => n.status === 'open').length;
+  const draftCount = notes.filter((n) => n.status === 'draft').length;
+  const headerParts = [
+    openCount > 0 && `${openCount} open`,
+    draftCount > 0 && `${draftCount} draft${draftCount === 1 ? '' : 's'}`,
+  ].filter(Boolean);
 
   return (
     <div className="file-section">
@@ -370,10 +457,8 @@ function FileSection({
         lineAnnotations={annotations}
         selectedLines={selectedLines}
         renderHeaderMetadata={() =>
-          draftCount > 0 ? (
-            <span className="header-meta">
-              {draftCount} draft{draftCount === 1 ? '' : 's'}
-            </span>
+          headerParts.length > 0 ? (
+            <span className="header-meta">{headerParts.join(' · ')}</span>
           ) : null
         }
         renderAnnotation={(a) => {
@@ -403,41 +488,131 @@ function FileSection({
               />
             );
           }
-          const draft = meta.draft;
-          if (editingId === draft.id) {
+          const note = meta.note;
+          if (note.status === 'draft' && editingId === note.id) {
             return (
               <Composer
-                initialBody={draft.body}
+                initialBody={note.body}
                 submitLabel="Save"
-                onSubmit={(body) => onSaveDraftBody(draft.id, body)}
+                onSubmit={(body) => onSaveDraftBody(note.id, body)}
                 onCancel={onCancelComposer}
               />
             );
           }
           return (
-            <div className="note draft-note">
-              <div className="note-head">
-                <span className="chip chip-draft">Draft</span>
-                <span className="muted">
-                  {draft.anchor.startLine === draft.anchor.endLine
-                    ? `line ${draft.anchor.endLine}`
-                    : `lines ${draft.anchor.startLine}–${draft.anchor.endLine}`}
-                </span>
-                <div className="note-actions">
-                  <button className="ghost small" onClick={() => onEditDraft(draft.id)}>
-                    Edit
-                  </button>
-                  <button className="ghost small" onClick={() => onDeleteDraft(draft.id)}>
-                    Delete
-                  </button>
-                </div>
-              </div>
-              <p>{draft.body}</p>
-            </div>
+            <CommentNote
+              note={note}
+              onEdit={note.status === 'draft' ? onEditDraft : undefined}
+              onDelete={note.status === 'draft' ? onDeleteDraft : undefined}
+            />
           );
         }}
       />
     </div>
+  );
+}
+
+function formatLines(anchor: CommentAnchor): string {
+  return anchor.startLine === anchor.endLine
+    ? `line ${anchor.endLine}`
+    : `lines ${anchor.startLine}–${anchor.endLine}`;
+}
+
+const CHIPS: Record<Comment['status'], { className: string; label: string }> = {
+  draft: { className: 'chip-draft', label: 'Draft' },
+  open: { className: 'chip-open', label: 'Open' },
+  resolved: { className: 'chip-resolved', label: '✓ Resolved' },
+  dismissed: { className: 'chip-dismissed', label: 'Dismissed' },
+};
+
+function CommentNote({
+  note,
+  onEdit,
+  onDelete,
+}: {
+  note: Comment;
+  onEdit?: (id: string) => void;
+  onDelete?: (id: string) => void;
+}) {
+  const chip = CHIPS[note.status];
+  return (
+    <div className={`note status-${note.status}`}>
+      <div className="note-head">
+        <span className={`chip ${chip.className}`}>{chip.label}</span>
+        <span className="muted">{formatLines(note.anchor)}</span>
+        {(onEdit || onDelete) && (
+          <div className="note-actions">
+            {onEdit && (
+              <button className="ghost small" onClick={() => onEdit(note.id)}>
+                Edit
+              </button>
+            )}
+            {onDelete && (
+              <button className="ghost small" onClick={() => onDelete(note.id)}>
+                Delete
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <p>{note.body}</p>
+    </div>
+  );
+}
+
+function ReviewPopover({
+  drafts,
+  submitting,
+  onSubmit,
+  onClose,
+}: {
+  drafts: Comment[];
+  submitting: boolean;
+  onSubmit: (summary: string) => void;
+  onClose: () => void;
+}) {
+  const [summary, setSummary] = useState('');
+  return (
+    <>
+      <div className="popover-backdrop" onClick={onClose} />
+      <div className="popover" role="dialog" aria-label="Submit review">
+        <textarea
+          autoFocus
+          rows={3}
+          placeholder="Overall summary (optional)…"
+          value={summary}
+          onChange={(e) => setSummary(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onSubmit(summary);
+            if (e.key === 'Escape') onClose();
+          }}
+        />
+        <ul className="popover-drafts">
+          {drafts.map((d) => (
+            <li key={d.id}>
+              <code>
+                {d.anchor.file} · {formatLines(d.anchor)}
+              </code>
+              <span>{d.body}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="composer-actions">
+          <button className="ghost small" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="primary small"
+            disabled={submitting}
+            onClick={() => onSubmit(summary)}
+          >
+            {submitting
+              ? 'Submitting…'
+              : `Submit review (${drafts.length})`}
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 
