@@ -45,15 +45,15 @@ Pick the mode in the UI's top bar:
 
 1. Your agent finishes a change. Launch `npx lastlook` and open the URL.
 2. Click a line number (or drag a range) in the diff to draft inline comments; submit them as one review. Submitting pins a snapshot of the diff — later code changes never shift your comments.
-3. In your agent, run `/resolve-review`. It fetches the open comments over HTTP, fixes each one in the code, and flips it to resolved — you watch the status chips update live in the UI.
+3. In your agent, run `/resolve-lastlook`. It fetches the open comments over HTTP, fixes each one in the code, and flips it to resolved — you watch the status chips update live in the UI.
 4. Comments the agent disagrees with (or that need no change) stay open with an explanation; dismiss them in the UI. The next round of feedback is a new review.
 
 ### Installing the agent skill
 
-The `resolve-review` skill is distributed with the [skills CLI](https://github.com/vercel-labs/skills), which installs it for Claude Code, Codex, Cursor, and friends:
+The `resolve-lastlook` skill is distributed with the [skills CLI](https://github.com/vercel-labs/skills), which installs it for Claude Code, Codex, Cursor, and friends:
 
 ```sh
-npx skills add maciekzygmunt/lastlook --skill resolve-review
+npx skills add maciekzygmunt/lastlook --skill resolve-lastlook
 ```
 
 lastlook itself never installs skills and never writes files into your repo.
@@ -70,7 +70,7 @@ npm-workspaces monorepo:
 | --- | --- |
 | `packages/server` | Hono API + CLI — the published `lastlook` package |
 | `packages/web` | React UI, bundled into the server package at build time |
-| `skills/resolve-review` | The agent skill |
+| `skills/resolve-lastlook` | The agent skill |
 
 ```sh
 npm install

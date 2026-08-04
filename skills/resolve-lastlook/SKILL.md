@@ -1,9 +1,9 @@
 ---
-name: resolve-review
-description: Fetch open code-review comments from this repo's local lastlook server, fix each one in the code, and mark it resolved. Use when the user asks to resolve a review, address review comments, or invokes /resolve-review.
+name: resolve-lastlook
+description: Fetch open code-review comments from this repo's local lastlook server, fix each one in the code, and mark it resolved. Use when the user asks to resolve a review, address review comments, or invokes /resolve-lastlook.
 ---
 
-# resolve-review
+# resolve-lastlook
 
 The user reviewed your changes in the lastlook web UI and submitted inline comments. Your job: fetch the open comments over HTTP, fix the code they point at, and flip each one to resolved so the user sees live progress in the UI.
 

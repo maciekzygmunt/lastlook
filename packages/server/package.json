@@ -1,6 +1,6 @@
 {
   "name": "lastlook",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "One last look before you ship — local code review for agent-written changes, with inline comments your agent resolves over HTTP",
   "license": "MIT",
   "author": "Maciej Zygmunt",
