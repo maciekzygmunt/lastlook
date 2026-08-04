@@ -14,3 +14,9 @@ if (!existsSync(join(src, 'index.html'))) {
 
 rmSync(dest, { recursive: true, force: true });
 cpSync(src, dest, { recursive: true });
+
+// npm renders the README from the package root, not the monorepo root
+const monorepoRoot = join(serverRoot, '..', '..');
+for (const file of ['README.md', 'LICENSE']) {
+  cpSync(join(monorepoRoot, file), join(serverRoot, file));
+}
