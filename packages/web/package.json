@@ -1,7 +1,7 @@
 {
-  "name": "@reviewd/web",
+  "name": "@lastlook/web",
   "version": "0.1.0",
-  "description": "reviewd — web UI",
+  "description": "lastlook — web UI (bundled into the lastlook package at build time)",
   "license": "MIT",
   "private": true,
   "type": "module",

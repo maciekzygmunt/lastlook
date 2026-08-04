@@ -1,19 +1,33 @@
 {
-  "name": "@reviewd/server",
+  "name": "lastlook",
   "version": "0.1.0",
-  "description": "reviewd — local diff-review server",
+  "description": "One last look before you ship — local code review for agent-written changes, with inline comments your agent resolves over HTTP",
   "license": "MIT",
+  "author": "Maciej Zygmunt",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/maciekzygmunt/diff.git",
+    "url": "git+https://github.com/maciekzygmunt/lastlook.git",
     "directory": "packages/server"
   },
+  "homepage": "https://github.com/maciekzygmunt/lastlook#readme",
+  "bugs": {
+    "url": "https://github.com/maciekzygmunt/lastlook/issues"
+  },
+  "keywords": [
+    "code-review",
+    "diff",
+    "git",
+    "ai-agents",
+    "claude-code",
+    "cli",
+    "localhost"
+  ],
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "bin": {
-    "reviewd": "dist/cli.js"
+    "lastlook": "dist/cli.js"
   },
   "files": [
     "dist"

@@ -41,7 +41,7 @@ function submitSettledReview(n: number): string {
 }
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'reviewd-store-'));
+  dataDir = mkdtempSync(join(tmpdir(), 'lastlook-store-'));
   store = new Store(dataDir);
 });
 

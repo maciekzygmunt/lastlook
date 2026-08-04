@@ -28,14 +28,14 @@ const blockers: Server[] = [];
 const tmpdirs: string[] = [];
 
 function makeRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'reviewd-repo-'));
+  const dir = mkdtempSync(join(tmpdir(), 'lastlook-repo-'));
   tmpdirs.push(dir);
   execFileSync('git', ['init', '-q'], { cwd: dir });
   return realpathSync(dir);
 }
 
 function makeDataDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'reviewd-data-'));
+  const dir = mkdtempSync(join(tmpdir(), 'lastlook-data-'));
   tmpdirs.push(dir);
   return dir;
 }
@@ -49,7 +49,7 @@ function launch(
 ): Launched {
   const proc = spawn(process.execPath, ['--import', TSX_LOADER, CLI, ...args], {
     cwd: repo,
-    env: { ...process.env, REVIEWD_DATA_DIR: dataDir, REVIEWD_BASE_PORT: String(basePort), ...env },
+    env: { ...process.env, LASTLOOK_DATA_DIR: dataDir, LASTLOOK_BASE_PORT: String(basePort), ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   children.push(proc);
@@ -77,7 +77,7 @@ afterEach(async () => {
   tmpdirs.length = 0;
 });
 
-describe('reviewd CLI lifecycle', () => {
+describe('lastlook CLI lifecycle', () => {
   it('prints one banner line, serves /api/health, writes server.json, clears it on SIGINT', { timeout: 20_000 }, async () => {
     const repo = makeRepo();
     const dataDir = makeDataDir();
@@ -86,7 +86,7 @@ describe('reviewd CLI lifecycle', () => {
     await waitFor(() => run.output().includes('http://'));
     const banner = run.output().trim();
     expect(banner.split('\n')).toHaveLength(1);
-    expect(banner).toContain('reviewd');
+    expect(banner).toContain('lastlook');
     expect(banner).toContain(repo);
     const url = banner.match(/http:\/\/\S+/)![0];
 
@@ -181,7 +181,7 @@ describe('reviewd CLI lifecycle', () => {
     const dataDir = makeDataDir();
     const run = launch(repo, dataDir, 25820, ['--bogus']);
     expect(await run.exited).toBe(1);
-    expect(run.output()).toContain('usage: reviewd');
+    expect(run.output()).toContain('usage: lastlook');
   });
 
   it('silently replaces a stale server.json', { timeout: 20_000 }, async () => {

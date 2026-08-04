@@ -30,12 +30,12 @@ afterAll(() => {
 describe('npm pack → run in a fresh repo', () => {
   it('serves the bundled web UI from the tarball with no build step', { timeout: 240_000 }, async () => {
     // real builds: web first (server's prepack copies its dist into the package)
-    execFileSync('npm', ['run', 'build', '-w', '@reviewd/web'], { cwd: monorepoRoot });
+    execFileSync('npm', ['run', 'build', '-w', '@lastlook/web'], { cwd: monorepoRoot });
 
-    const packDest = makeTmp('reviewd-pack-');
+    const packDest = makeTmp('lastlook-pack-');
     const tarball = execFileSync(
       'npm',
-      ['pack', '-w', '@reviewd/server', '--pack-destination', packDest],
+      ['pack', '-w', 'lastlook', '--pack-destination', packDest],
       { cwd: monorepoRoot, encoding: 'utf8' }
     )
       .trim()
@@ -70,13 +70,13 @@ describe('npm pack → run in a fresh repo', () => {
 
     symlinkSync(join(monorepoRoot, 'node_modules'), join(packageDir, 'node_modules'), 'dir');
 
-    const repo = makeTmp('reviewd-pack-repo-');
+    const repo = makeTmp('lastlook-pack-repo-');
     execFileSync('git', ['init', '-q'], { cwd: repo });
-    const dataDir = makeTmp('reviewd-pack-data-');
+    const dataDir = makeTmp('lastlook-pack-data-');
 
     server = spawn(process.execPath, [join(packageDir, 'dist', 'cli.js')], {
       cwd: repo,
-      env: { ...process.env, REVIEWD_DATA_DIR: dataDir, REVIEWD_BASE_PORT: '25900' },
+      env: { ...process.env, LASTLOOK_DATA_DIR: dataDir, LASTLOOK_BASE_PORT: '25900' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';

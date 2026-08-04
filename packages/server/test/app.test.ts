@@ -8,7 +8,7 @@ describe('GET /api/health', () => {
     const app = createApp({
       repoPath: '/tmp/some-repo',
       version: '0.1.0',
-      dataDir: join(tmpdir(), 'reviewd-unused-data'),
+      dataDir: join(tmpdir(), 'lastlook-unused-data'),
     });
     const res = await app.request('/api/health');
     expect(res.status).toBe(200);

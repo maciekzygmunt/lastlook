@@ -56,7 +56,7 @@ function seedComment(id: string, status: 'open' | 'resolved' | 'dismissed' = 'op
 }
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'reviewd-comments-'));
+  dataDir = mkdtempSync(join(tmpdir(), 'lastlook-comments-'));
   app = makeApp();
 });
 

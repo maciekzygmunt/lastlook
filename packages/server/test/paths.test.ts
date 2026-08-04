@@ -3,8 +3,8 @@ import { repoDataDir } from '../src/paths.js';
 
 describe('repoDataDir', () => {
   it('places the dir under the data root, never inside the repo', () => {
-    const dir = repoDataDir('/Users/alice/projects/my-app', '/Users/alice/.diff-review');
-    expect(dir.startsWith('/Users/alice/.diff-review/repos/')).toBe(true);
+    const dir = repoDataDir('/Users/alice/projects/my-app', '/Users/alice/.lastlook');
+    expect(dir.startsWith('/Users/alice/.lastlook/repos/')).toBe(true);
     expect(dir.includes('/Users/alice/projects/my-app')).toBe(false);
   });
 

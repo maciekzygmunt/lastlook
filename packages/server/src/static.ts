@@ -44,6 +44,6 @@ export function mountWebUi(app: Hono, distDir: string): void {
     }
     const index = await serveFile(c, join(root, 'index.html'));
     if (index) return index;
-    return c.text('reviewd web UI is not built — run `npm run build` in packages/web', 503);
+    return c.text('lastlook web UI is not built — run `npm run build` in packages/web', 503);
   });
 }

@@ -27,7 +27,7 @@ export function openBrowser(url: string): void {
   const { cmd, args } = openerCommand(url);
   const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
   child.on('error', (err) => {
-    console.error(`reviewd: could not open browser (${cmd}): ${err.message}`);
+    console.error(`lastlook: could not open browser (${cmd}): ${err.message}`);
   });
   child.unref();
 }

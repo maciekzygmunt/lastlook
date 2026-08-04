@@ -31,7 +31,7 @@ function git(dir: string, ...args: string[]): string {
 
 /** Repo with one commit plus an uncommitted edit, so mode=uncommitted has content. */
 function makeDirtyRepo(): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'reviewd-reviews-repo-')));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'lastlook-reviews-repo-')));
   git(dir, 'init', '-q');
   writeFileSync(join(dir, 'tracked.txt'), 'line 1\nline 2\n');
   git(dir, 'add', '-A');
@@ -79,7 +79,7 @@ async function submit(payload: Record<string, unknown>): Promise<Response> {
 
 beforeEach(() => {
   repo = makeDirtyRepo();
-  dataDir = mkdtempSync(join(tmpdir(), 'reviewd-reviews-data-'));
+  dataDir = mkdtempSync(join(tmpdir(), 'lastlook-reviews-data-'));
   app = makeApp();
 });
 

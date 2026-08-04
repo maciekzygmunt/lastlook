@@ -341,7 +341,7 @@ export default function App() {
     <div className="app" data-theme={themeType}>
       <header className="topbar">
         <div className="topbar-left">
-          <span className="logo">reviewd</span>
+          <span className="logo">lastlook</span>
           {repoPath && <span className="repo-chip">{repoPath}</span>}
           <nav className="mode-switch">
             {MODES.map((m) => (

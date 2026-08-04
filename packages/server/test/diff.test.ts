@@ -17,7 +17,7 @@ function git(dir: string, ...args: string[]): string {
 }
 
 function makeRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'reviewd-diff-'));
+  const dir = mkdtempSync(join(tmpdir(), 'lastlook-diff-'));
   tmpdirs.push(dir);
   git(dir, 'init', '-q');
   return realpathSync(dir);
@@ -230,7 +230,7 @@ describe('computeDiff — branch', () => {
     const app = createApp({
       repoPath: repo,
       version: '0.1.0',
-      dataDir: join(tmpdir(), 'reviewd-unused-data'),
+      dataDir: join(tmpdir(), 'lastlook-unused-data'),
     });
 
     const ok = await app.request('/api/diff?mode=branch&base=main');
@@ -437,7 +437,7 @@ describe('computeDiff — errors', () => {
 describe('GET /api/diff', () => {
   function makeApp(repoPath: string) {
     // dataDir is never written here — Store touches disk only on comment mutations
-    return createApp({ repoPath, version: '0.1.0', dataDir: join(tmpdir(), 'reviewd-unused-data') });
+    return createApp({ repoPath, version: '0.1.0', dataDir: join(tmpdir(), 'lastlook-unused-data') });
   }
 
   it('returns the full response shape for mode=uncommitted, reflecting an edit and a new file', async () => {
@@ -506,7 +506,7 @@ describe('GET /api/diff', () => {
     const app = createApp({
       repoPath: repo,
       version: '0.1.0',
-      dataDir: join(tmpdir(), 'reviewd-unused-data'),
+      dataDir: join(tmpdir(), 'lastlook-unused-data'),
       limits: { maxPatchBytes: 1024, stubChangedLines: 3000 },
     });
 
@@ -519,7 +519,7 @@ describe('GET /api/diff', () => {
 
 describe('GET /api/diff/file', () => {
   function makeApp(repoPath: string) {
-    return createApp({ repoPath, version: '0.1.0', dataDir: join(tmpdir(), 'reviewd-unused-data') });
+    return createApp({ repoPath, version: '0.1.0', dataDir: join(tmpdir(), 'lastlook-unused-data') });
   }
 
   it('returns one file’s full segment on demand, stub or not', async () => {

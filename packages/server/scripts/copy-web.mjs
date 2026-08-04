@@ -8,7 +8,7 @@ const src = join(serverRoot, '..', 'web', 'dist');
 const dest = join(serverRoot, 'dist', 'web');
 
 if (!existsSync(join(src, 'index.html'))) {
-  console.error('copy-web: packages/web/dist is missing — run `npm run build -w @reviewd/web` first');
+  console.error('copy-web: packages/web/dist is missing — run `npm run build -w @lastlook/web` first');
   process.exit(1);
 }
 

@@ -1,17 +1,17 @@
 ---
 name: resolve-review
-description: Fetch open code-review comments from this repo's local reviewd server, fix each one in the code, and mark it resolved. Use when the user asks to resolve a review, address review comments, or invokes /resolve-review.
+description: Fetch open code-review comments from this repo's local lastlook server, fix each one in the code, and mark it resolved. Use when the user asks to resolve a review, address review comments, or invokes /resolve-review.
 ---
 
 # resolve-review
 
-The user reviewed your changes in the reviewd web UI and submitted inline comments. Your job: fetch the open comments over HTTP, fix the code they point at, and flip each one to resolved so the user sees live progress in the UI.
+The user reviewed your changes in the lastlook web UI and submitted inline comments. Your job: fetch the open comments over HTTP, fix the code they point at, and flip each one to resolved so the user sees live progress in the UI.
 
 Everything below is plain `curl` against a local server. Never start, restart, or kill that server yourself.
 
 ## 1. Locate the server
 
-The server writes its port to a per-repo discovery file under the reviewd data dir (`$REVIEWD_DATA_DIR`, defaulting to `~/.diff-review`).
+The server writes its port to a per-repo discovery file under the lastlook data dir (`$LASTLOOK_DATA_DIR`, defaulting to `~/.lastlook`).
 
 ```sh
 REPO=$(git rev-parse --show-toplevel)
@@ -20,7 +20,7 @@ DATA=$(node -e '
   const p = process.argv[1];
   const s = p.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   const h = createHash("sha256").update(p).digest("hex").slice(0, 8);
-  console.log(`${process.env.REVIEWD_DATA_DIR || process.env.HOME + "/.diff-review"}/repos/${s}-${h}`);
+  console.log(`${process.env.LASTLOOK_DATA_DIR || process.env.HOME + "/.lastlook"}/repos/${s}-${h}`);
 ' "$REPO")
 PORT=$(node -e 'console.log(require(process.argv[1]).port)' "$DATA/server.json")
 ```
@@ -33,7 +33,7 @@ curl -fsS "http://localhost:$PORT/api/health"   # -> {"ok":true,"repoPath":...,"
 
 **Fail fast.** If `server.json` is missing, or the health check fails or returns a different `repoPath`, stop and tell the user:
 
-> no diff-review server for this repo — run `npx reviewd` and submit a review first
+> no lastlook server for this repo — run `npx lastlook` and submit a review first
 
 Do not auto-start the server. Do not retry in a loop.
 

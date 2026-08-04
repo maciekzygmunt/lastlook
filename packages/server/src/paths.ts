@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 export function dataRoot(): string {
-  return process.env.REVIEWD_DATA_DIR ?? join(homedir(), '.diff-review');
+  return process.env.LASTLOOK_DATA_DIR ?? join(homedir(), '.lastlook');
 }
 
 export function repoDataDir(repoPath: string, root: string = dataRoot()): string {

@@ -28,7 +28,7 @@ function git(dir: string, ...args: string[]): string {
 }
 
 function makeRepo(): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'reviewd-pr-repo-')));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'lastlook-pr-repo-')));
   tmpdirs.push(dir);
   git(dir, 'init', '-q');
   writeFileSync(join(dir, 'tracked.txt'), 'line 1\n');
@@ -39,7 +39,7 @@ function makeRepo(): string {
 
 /** Dir containing a fake `gh` script (plus a real-git symlink so computeDiff still works). */
 function makeBinDir(ghScript?: string): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'reviewd-pr-bin-')));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'lastlook-pr-bin-')));
   tmpdirs.push(dir);
   symlinkSync(GIT_BIN, join(dir, 'git'));
   if (ghScript !== undefined) {
@@ -173,7 +173,7 @@ describe('GET /api/diff?mode=pr', () => {
     return createApp({
       repoPath,
       version: '0.1.0',
-      dataDir: join(tmpdir(), 'reviewd-unused-data'),
+      dataDir: join(tmpdir(), 'lastlook-unused-data'),
     });
   }
 

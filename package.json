@@ -1,5 +1,5 @@
 {
-  "name": "reviewd-monorepo",
+  "name": "lastlook-monorepo",
   "private": true,
   "version": "0.1.0",
   "license": "MIT",
@@ -10,8 +10,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace @reviewd/server",
-    "build": "npm run build -w @reviewd/web && npm run build -w @reviewd/server",
+    "dev": "npm run dev --workspace lastlook",
+    "build": "npm run build -w @lastlook/web && npm run build -w lastlook",
     "test": "npm test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }

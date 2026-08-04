@@ -31,8 +31,8 @@ function parseFlags(): CliFlags {
     });
     return { open: values.open ?? false, force: values.force ?? false };
   } catch (err) {
-    console.error(`reviewd: ${(err as Error).message}`);
-    console.error('usage: reviewd [--open] [--force]');
+    console.error(`lastlook: ${(err as Error).message}`);
+    console.error('usage: lastlook [--open] [--force]');
     process.exit(1);
   }
 }
@@ -44,7 +44,7 @@ function resolveRepoRoot(): string {
       stdio: ['ignore', 'pipe', 'pipe'],
     }).trim();
   } catch {
-    console.error('reviewd: not inside a git repository');
+    console.error('lastlook: not inside a git repository');
     process.exit(1);
   }
 }
@@ -64,7 +64,7 @@ function webDistDir(): string | undefined {
   // dev fallback: the workspace sibling's build output
   try {
     const require = createRequire(import.meta.url);
-    return join(dirname(require.resolve('@reviewd/web/package.json')), 'dist');
+    return join(dirname(require.resolve('@lastlook/web/package.json')), 'dist');
   } catch {
     return undefined;
   }
@@ -82,7 +82,7 @@ async function killServer(info: ServerJson): Promise<void> {
     if (!(await isHealthy(info))) return;
     await new Promise((r) => setTimeout(r, 100));
   }
-  console.error(`reviewd: existing server (pid ${info.pid}) did not stop within 5s`);
+  console.error(`lastlook: existing server (pid ${info.pid}) did not stop within 5s`);
   process.exit(1);
 }
 
@@ -95,14 +95,14 @@ async function main(): Promise<void> {
   if (existing && (await isHealthy(existing))) {
     if (!flags.force) {
       const url = `http://localhost:${existing.port}`;
-      console.log(`reviewd already running for ${repoPath} — ${url}`);
+      console.log(`lastlook already running for ${repoPath} — ${url}`);
       if (flags.open) openBrowser(url);
       return;
     }
     await killServer(existing);
   }
 
-  const basePort = Number(process.env.REVIEWD_BASE_PORT ?? BASE_PORT);
+  const basePort = Number(process.env.LASTLOOK_BASE_PORT ?? BASE_PORT);
   const port = await findFreePort(basePort);
   const app = createApp({
     repoPath,
@@ -118,7 +118,7 @@ async function main(): Promise<void> {
       pid: process.pid,
       startedAt: new Date().toISOString(),
     });
-    console.log(`reviewd — ${repoPath} — http://localhost:${port}`);
+    console.log(`lastlook — ${repoPath} — http://localhost:${port}`);
     if (flags.open) openBrowser(`http://localhost:${port}`);
   });
 

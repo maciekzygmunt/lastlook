@@ -5,8 +5,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 
 function makeDist(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'reviewd-dist-'));
-  writeFileSync(join(dir, 'index.html'), '<!doctype html><title>reviewd</title>');
+  const dir = mkdtempSync(join(tmpdir(), 'lastlook-dist-'));
+  writeFileSync(join(dir, 'index.html'), '<!doctype html><title>lastlook</title>');
   mkdirSync(join(dir, 'assets'));
   writeFileSync(join(dir, 'assets', 'index-abc123.js'), 'console.log("app")');
   writeFileSync(join(dir, 'assets', 'index-abc123.css'), '.app{}');
@@ -18,7 +18,7 @@ afterAll(() => rmSync(dist, { recursive: true, force: true }));
 
 function makeApp(webDistDir?: string) {
   // dataDir is never written here — Store touches disk only on comment mutations
-  const dataDir = join(tmpdir(), 'reviewd-unused-data');
+  const dataDir = join(tmpdir(), 'lastlook-unused-data');
   return createApp({ repoPath: '/tmp/some-repo', version: '0.1.0', dataDir, webDistDir });
 }
 
@@ -27,7 +27,7 @@ describe('static web UI serving', () => {
     const res = await makeApp(dist).request('/');
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/html');
-    expect(await res.text()).toContain('reviewd');
+    expect(await res.text()).toContain('lastlook');
   });
 
   it('serves assets with their content types', async () => {
@@ -59,7 +59,7 @@ describe('static web UI serving', () => {
   });
 
   it('explains when the UI is not built', async () => {
-    const empty = mkdtempSync(join(tmpdir(), 'reviewd-empty-'));
+    const empty = mkdtempSync(join(tmpdir(), 'lastlook-empty-'));
     try {
       const res = await makeApp(empty).request('/');
       expect(res.status).toBe(503);
