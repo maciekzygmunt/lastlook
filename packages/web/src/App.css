@@ -1,23 +1,18 @@
 .app {
   --bg: #fafafa;
   --surface: #ffffff;
-  --surface-2: #f4f4f5;
-  --text: #18181b;
-  --muted: #71717a;
-  --faint: #a1a1aa;
-  --divider: rgba(0, 0, 0, 0.08);
-  --accent: #4f6ef7;
+  --surface-2: #f2f2f3;
+  --text: #17171a;
+  --muted: #64646b;
+  --faint: #9c9ca3;
+  --divider: #e7e7e9;
+  --accent: #4f5fe8;
   --accent-text: #ffffff;
-  --ring: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 1px 2px -1px rgba(0, 0, 0, 0.06),
-    0 2px 4px 0 rgba(0, 0, 0, 0.04);
-  --ring-hover: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.08),
-    0 2px 4px 0 rgba(0, 0, 0, 0.06);
-  --draft: #9a6700;
-  --draft-bg: rgba(154, 103, 0, 0.09);
-  --open: #4f6ef7;
-  --open-bg: rgba(79, 110, 247, 0.1);
-  --resolved: #1a7f37;
-  --resolved-bg: rgba(26, 127, 55, 0.1);
+  --focus-ring: 0 0 0 3px rgba(79, 95, 232, 0.12);
+  --pop-shadow: 0 12px 32px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.05);
+  --draft: #b45309;
+  --open: #4f5fe8;
+  --resolved: #15803d;
 
   height: 100%;
   display: flex;
@@ -27,23 +22,20 @@
 }
 
 .app[data-theme='dark'] {
-  --bg: #131417;
-  --surface: #1a1c20;
-  --surface-2: #22242a;
-  --text: #e8eaed;
-  --muted: #9298a2;
-  --faint: #676d78;
-  --divider: rgba(255, 255, 255, 0.07);
-  --accent: #5b7cfa;
+  --bg: #141518;
+  --surface: #1b1d21;
+  --surface-2: #24262b;
+  --text: #e6e8ec;
+  --muted: #969aa3;
+  --faint: #666b74;
+  --divider: rgba(255, 255, 255, 0.09);
+  --accent: #6b82f7;
   --accent-text: #ffffff;
-  --ring: 0 0 0 1px rgba(255, 255, 255, 0.09);
-  --ring-hover: 0 0 0 1px rgba(255, 255, 255, 0.14);
+  --focus-ring: 0 0 0 3px rgba(107, 130, 247, 0.18);
+  --pop-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
   --draft: #d9b453;
-  --draft-bg: rgba(217, 180, 83, 0.1);
-  --open: #7d96fb;
-  --open-bg: rgba(125, 150, 251, 0.12);
+  --open: #6b82f7;
   --resolved: #57ab5a;
-  --resolved-bg: rgba(87, 171, 90, 0.12);
 }
 
 /* ---------- top bar ---------- */
@@ -54,6 +46,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 10px 16px;
+  background: var(--surface);
   border-bottom: 1px solid var(--divider);
   flex-shrink: 0;
 }
@@ -66,7 +59,7 @@
 }
 
 .logo {
-  font-weight: 650;
+  font-weight: 600;
   font-size: 13.5px;
   letter-spacing: -0.01em;
 }
@@ -75,15 +68,15 @@
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 11px;
   color: var(--muted);
-  background: var(--surface-2);
+  border: 1px solid var(--divider);
   border-radius: 6px;
-  padding: 3px 8px;
+  padding: 2px 7px;
 }
 
 .mode-switch {
   display: flex;
-  background: var(--surface-2);
-  border-radius: 8px;
+  border: 1px solid var(--divider);
+  border-radius: 7px;
   padding: 2px;
   gap: 2px;
   margin-left: 6px;
@@ -95,11 +88,11 @@
   color: var(--muted);
   font-size: 12px;
   font-weight: 500;
-  padding: 4px 11px;
-  border-radius: 6px;
+  padding: 3px 10px;
+  border-radius: 5px;
   cursor: pointer;
-  transition-property: color, background-color, box-shadow;
-  transition-duration: 150ms;
+  transition-property: color, background-color;
+  transition-duration: 120ms;
   transition-timing-function: ease-out;
 }
 
@@ -113,9 +106,8 @@
 }
 
 .mode-switch button.active {
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--text);
-  box-shadow: 0 0 0 1px var(--divider), 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .param-form {
@@ -126,15 +118,15 @@
 
 .param-form input {
   width: 120px;
-  border: none;
-  background: var(--surface-2);
+  border: 1px solid var(--divider);
+  background: var(--surface);
   color: var(--text);
   font: inherit;
   font-size: 12px;
-  padding: 4px 9px;
-  border-radius: 7px;
-  transition-property: box-shadow;
-  transition-duration: 150ms;
+  padding: 3px 9px;
+  border-radius: 6px;
+  transition-property: border-color, box-shadow;
+  transition-duration: 120ms;
 }
 
 .param-form input::placeholder {
@@ -143,7 +135,8 @@
 
 .param-form input:focus {
   outline: none;
-  box-shadow: 0 0 0 1.5px var(--accent);
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
 }
 
 /* ---------- buttons ---------- */
@@ -154,29 +147,24 @@ button.ghost {
   color: var(--muted);
   font-size: 12px;
   font-weight: 500;
-  padding: 4px 10px;
-  border-radius: 7px;
+  padding: 4px 9px;
+  border-radius: 6px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  box-shadow: var(--ring);
-  transition-property: color, background-color, box-shadow, scale;
-  transition-duration: 150ms;
+  transition-property: color, background-color;
+  transition-duration: 120ms;
   transition-timing-function: ease-out;
 }
 
 button.ghost:hover {
   color: var(--text);
-  box-shadow: var(--ring-hover);
-}
-
-button.ghost:active {
-  scale: 0.96;
+  background: var(--surface-2);
 }
 
 button.small {
-  padding: 2px 8px;
+  padding: 2px 7px;
   font-size: 11px;
 }
 
@@ -191,6 +179,7 @@ button.small {
 .sidebar {
   width: 260px;
   flex-shrink: 0;
+  background: var(--surface);
   border-right: 1px solid var(--divider);
   display: flex;
   flex-direction: column;
@@ -221,7 +210,7 @@ button.small {
   font-size: 10.5px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   color: var(--faint);
 }
 
@@ -240,10 +229,10 @@ button.small {
   flex-direction: column;
   gap: 1px;
   padding: 6px 8px;
-  border-radius: 7px;
+  border-radius: 6px;
   cursor: pointer;
-  transition-property: background-color, box-shadow;
-  transition-duration: 150ms;
+  transition-property: background-color;
+  transition-duration: 120ms;
   transition-timing-function: ease-out;
 }
 
@@ -253,7 +242,6 @@ button.small {
 
 .review-row.active {
   background: var(--surface-2);
-  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 /* ---------- past-review banner + summary ---------- */
@@ -268,9 +256,9 @@ button.small {
   justify-content: space-between;
   gap: 10px;
   padding: 8px 14px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--surface);
-  box-shadow: var(--ring);
+  border: 1px solid var(--divider);
   font-size: 12.5px;
   color: var(--muted);
 }
@@ -287,10 +275,10 @@ button.small {
 .diffs {
   flex: 1;
   overflow: auto;
-  padding: 18px 20px 40px;
+  padding: 20px 24px 48px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
   min-width: 0;
 }
 
@@ -315,10 +303,10 @@ button.small {
    or long diffs get squeezed and silently clip rows */
 .file-section {
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: hidden;
   background: var(--surface);
-  box-shadow: var(--ring);
+  border: 1px solid var(--divider);
 }
 
 /* Stub cards: binary files and collapsed large/generated diffs */
@@ -363,24 +351,22 @@ button.primary {
   font-size: 12px;
   font-weight: 550;
   padding: 5px 12px;
-  border-radius: 7px;
+  border-radius: 6px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.2),
-    inset 0 0.5px 0 rgba(255, 255, 255, 0.18);
-  transition-property: filter, scale;
-  transition-duration: 150ms;
+  transition-property: filter;
+  transition-duration: 120ms;
   transition-timing-function: ease-out;
 }
 
 button.primary:hover:not(:disabled) {
-  filter: brightness(1.07);
+  filter: brightness(1.08);
 }
 
 button.primary:active:not(:disabled) {
-  scale: 0.96;
+  filter: brightness(0.94);
 }
 
 button.primary:disabled {
@@ -389,7 +375,7 @@ button.primary:disabled {
 }
 
 .badge {
-  background: rgb(255 255 255 / 0.22);
+  background: rgb(255 255 255 / 0.25);
   border-radius: 999px;
   padding: 0 6px;
   font-size: 10.5px;
@@ -426,24 +412,30 @@ button.primary:disabled {
   font-size: 11px;
 }
 
-/* ---------- inline notes (drafts / composer) ---------- */
+/* ---------- inline notes (drafts / composer) ----------
+   Flat full-width panels separated by hairlines — no cards,
+   no shadows, no left-edge accent bars. */
 
 .note {
-  margin: 8px 12px;
-  border-radius: 8px;
-  padding: 9px 12px 10px;
-  background: var(--surface);
-  box-shadow: var(--ring);
+  margin: 0;
+  border-top: 1px solid var(--divider);
+  border-bottom: 1px solid var(--divider);
+  padding: 10px 16px 12px;
+  background: var(--bg);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 12.5px;
-  max-width: 660px;
+}
+
+.note + .note {
+  border-top: 0;
 }
 
 .note p {
   margin: 6px 0 0;
-  line-height: 1.5;
+  line-height: 1.55;
   text-wrap: pretty;
   white-space: pre-wrap;
+  max-width: 660px;
 }
 
 .note-head {
@@ -455,89 +447,80 @@ button.primary:disabled {
 .note-actions {
   margin-left: auto;
   display: flex;
-  gap: 4px;
+  gap: 2px;
 }
 
 .note-actions button {
-  box-shadow: none;
   color: var(--faint);
 }
 
 .note-actions button:hover {
-  box-shadow: none;
   color: var(--text);
   background: var(--surface-2);
 }
 
+/* Status is a dot + label, colored by state */
 .chip {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  border-radius: 5px;
-  padding: 2px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 550;
+}
+
+.chip::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  flex-shrink: 0;
 }
 
 .chip-draft {
   color: var(--draft);
-  background: var(--draft-bg);
 }
 
 .chip-open {
   color: var(--open);
-  background: var(--open-bg);
 }
 
 .chip-resolved {
   color: var(--resolved);
-  background: var(--resolved-bg);
 }
 
 .chip-dismissed {
   color: var(--faint);
-  background: var(--surface-2);
 }
 
-.status-draft {
-  box-shadow: var(--ring), inset 2px 0 0 var(--draft);
-}
-
-.status-open {
-  box-shadow: var(--ring), inset 2px 0 0 var(--open);
-}
-
-.status-resolved {
-  opacity: 0.65;
-}
-
-.composer {
-  box-shadow: var(--ring), inset 2px 0 0 var(--accent);
+.status-resolved p {
+  color: var(--muted);
 }
 
 .composer textarea {
   width: 100%;
   resize: vertical;
-  background: var(--bg);
+  background: var(--surface);
   color: var(--text);
-  border: none;
-  box-shadow: var(--ring);
-  border-radius: 7px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
   padding: 7px 9px;
   font: inherit;
   font-size: 12.5px;
-  transition-property: box-shadow;
-  transition-duration: 150ms;
+  transition-property: border-color, box-shadow;
+  transition-duration: 120ms;
 }
 
 .composer textarea:focus {
   outline: none;
-  box-shadow: 0 0 0 1.5px var(--accent);
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
 }
 
 .composer-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 7px;
+  gap: 6px;
   margin-top: 8px;
 }
 
@@ -577,9 +560,10 @@ button.primary:disabled {
   z-index: 50;
   width: 380px;
   padding: 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--surface);
-  box-shadow: var(--ring), 0 12px 32px -8px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--divider);
+  box-shadow: var(--pop-shadow);
 }
 
 .popover textarea {
@@ -587,17 +571,19 @@ button.primary:disabled {
   resize: vertical;
   background: var(--bg);
   color: var(--text);
-  border: none;
-  box-shadow: var(--ring);
-  border-radius: 7px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
   padding: 7px 9px;
   font: inherit;
   font-size: 12.5px;
+  transition-property: border-color, box-shadow;
+  transition-duration: 120ms;
 }
 
 .popover textarea:focus {
   outline: none;
-  box-shadow: 0 0 0 1.5px var(--accent);
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
 }
 
 .popover-drafts {
@@ -617,8 +603,9 @@ button.primary:disabled {
   gap: 2px;
   font-size: 12px;
   padding: 7px 9px;
-  border-radius: 7px;
-  background: var(--surface-2);
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--divider);
 }
 
 .popover-drafts code {

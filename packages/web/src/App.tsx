@@ -990,7 +990,7 @@ function StubFileCard({
 const CHIPS: Record<Comment['status'], { className: string; label: string }> = {
   draft: { className: 'chip-draft', label: 'Draft' },
   open: { className: 'chip-open', label: 'Open' },
-  resolved: { className: 'chip-resolved', label: '✓ Resolved' },
+  resolved: { className: 'chip-resolved', label: 'Resolved' },
   dismissed: { className: 'chip-dismissed', label: 'Dismissed' },
 };
 
