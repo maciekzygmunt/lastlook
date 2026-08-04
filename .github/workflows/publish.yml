@@ -1,0 +1,51 @@
+name: Publish
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+      - name: Compare local version against npm
+        id: version
+        run: |
+          LOCAL=$(node -p "require('./packages/server/package.json').version")
+          PUBLISHED=$(npm view lastlook version 2>/dev/null || echo "unpublished")
+          echo "local=$LOCAL" >> "$GITHUB_OUTPUT"
+          if [ "$LOCAL" != "$PUBLISHED" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "Version $LOCAL not on npm (registry has $PUBLISHED) — will publish"
+          else
+            echo "Version $LOCAL already on npm — skipping publish"
+          fi
+
+      - name: Publish to npm
+        if: steps.version.outputs.publish == 'true'
+        run: npm publish -w lastlook --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Tag and create GitHub release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.version.outputs.local }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" --title "$TAG" --generate-notes
