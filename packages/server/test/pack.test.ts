@@ -63,6 +63,11 @@ describe('npm pack → run in a fresh repo', () => {
         expect(declared, `${file} imports undeclared dependency ${spec}`).toContain(dep);
       }
     }
+    // npm's global-bin link executes the file itself — without a shebang the
+    // shell runs the JS as a shell script ("import: command not found")
+    const cliSource = readFileSync(join(packageDir, 'dist', 'cli.js'), 'utf8');
+    expect(cliSource.startsWith('#!/usr/bin/env node\n')).toBe(true);
+
     symlinkSync(join(monorepoRoot, 'node_modules'), join(packageDir, 'node_modules'), 'dir');
 
     const repo = makeTmp('reviewd-pack-repo-');

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { serve } from '@hono/node-server';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
