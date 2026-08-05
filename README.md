@@ -38,7 +38,7 @@ Pick the mode in the UI's top bar:
 | --- | --- |
 | Uncommitted (default) | Worktree vs `HEAD`, including untracked files |
 | Last commit | `HEAD~1` vs `HEAD` |
-| Branch | Merge-base of a chosen base branch vs worktree |
+| Branch | `HEAD` vs its merge-base with the repository's default branch (`origin/main` or whatever `origin/HEAD` points at) — committed work only, editable base |
 | PR | A GitHub pull request, via the `gh` CLI |
 
 ## The review → resolve loop

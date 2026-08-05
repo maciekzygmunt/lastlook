@@ -149,6 +149,26 @@ async function branchDiff(repoPath: string, base: string | undefined): Promise<s
   return git(repoPath, ['diff', mergeBase, 'HEAD']);
 }
 
+/**
+ * The repository's default branch as a remote-tracking ref (`origin/main`,
+ * `origin/develop`, …), read from `origin/HEAD`. Remote-tracking on purpose: a
+ * local `main` the user hasn't pulled forks before their real fork point and
+ * silently drags other people's commits into the diff. Falls back to `main`
+ * when there is no remote or `origin/HEAD` is unset — an imperfect default
+ * beats a broken mode.
+ */
+export async function resolveDefaultBase(repoPath: string): Promise<string> {
+  try {
+    const ref = (
+      await git(repoPath, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'])
+    ).trim();
+    if (ref) return ref;
+  } catch {
+    // no remote, no origin/HEAD, or not a repository at all
+  }
+  return 'main';
+}
+
 /** Shell out to the GitHub CLI, mapping missing/unauthenticated gh to actionable errors (spec §9). */
 async function gh(repoPath: string, args: string[]): Promise<string> {
   try {
