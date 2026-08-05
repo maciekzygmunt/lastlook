@@ -115,6 +115,8 @@ export function createApp({
         headSha: diff.headSha,
         patch: diff.visiblePatch,
         files: diff.files,
+        // PR mode only; JSON-dropped when absent, so the other modes are unchanged
+        prTitle: diff.prTitle,
       });
     } catch (error) {
       if (error instanceof DiffError) return c.json({ error: error.message }, error.status);

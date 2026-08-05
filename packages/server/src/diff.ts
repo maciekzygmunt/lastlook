@@ -68,6 +68,12 @@ export interface DiffResult {
   /** `patch` minus stub files' segments — what GET /api/diff returns. */
   visiblePatch: string;
   files: DiffFile[];
+  /**
+   * PR mode only: the resolved pull request's title. Presentation metadata, so
+   * it is deliberately absent from `params` — a PR retitled after a review was
+   * submitted must not invalidate that review.
+   */
+  prTitle?: string;
 }
 
 export class DiffError extends Error {
@@ -206,10 +212,73 @@ async function gh(repoPath: string, args: string[]): Promise<string> {
   }
 }
 
-async function prDiff(repoPath: string, pr: string | undefined): Promise<string> {
-  if (!pr || !/^\d+$/.test(pr)) {
-    throw new DiffError(400, 'pr mode needs a pr param — the PR number to diff');
+/** Which pull request a PR-mode diff is pinned to: number always, title when gh supplied one. */
+interface PrIdentity {
+  number: string;
+  title?: string;
+}
+
+/** Branch name for the no-PR message, or null on a detached HEAD (or any git failure). */
+async function currentBranch(repoPath: string): Promise<string | null> {
+  try {
+    const name = (await git(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+    return name === '' || name === 'HEAD' ? null : name;
+  } catch {
+    return null;
   }
+}
+
+/**
+ * gh resolves the branch's pull request across all states, preferring open ones,
+ * so a merged or closed PR still loads — hence "no pull request", not "no open PR".
+ */
+async function noPrMessage(repoPath: string): Promise<string> {
+  const branch = await currentBranch(repoPath);
+  const where = branch === null ? 'HEAD is detached, not on a branch' : `branch "${branch}"`;
+  return `no pull request found for ${where} — push and open one, or use Branch mode`;
+}
+
+/**
+ * Ask gh which pull request belongs to the current branch. Identity metadata
+ * only (number + title) — the file list still comes from the patch itself.
+ */
+async function detectPr(repoPath: string): Promise<PrIdentity> {
+  let stdout: string;
+  try {
+    stdout = await gh(repoPath, ['pr', 'view', '--json', 'number,title']);
+  } catch (error) {
+    // gh: `no pull requests found for branch "x"` — replace with a message that
+    // names the branch and points at the mode that works without a PR
+    if (error instanceof DiffError && /no pull requests? found/i.test(error.message)) {
+      throw new DiffError(400, await noPrMessage(repoPath));
+    }
+    throw error;
+  }
+  let parsed: { number?: unknown; title?: unknown };
+  try {
+    parsed = JSON.parse(stdout) as { number?: unknown; title?: unknown };
+  } catch {
+    parsed = {};
+  }
+  if (typeof parsed.number !== 'number' || !Number.isInteger(parsed.number)) {
+    throw new DiffError(400, 'gh returned no PR number for the current branch');
+  }
+  const identity: PrIdentity = { number: String(parsed.number) };
+  if (typeof parsed.title === 'string' && parsed.title !== '') identity.title = parsed.title;
+  return identity;
+}
+
+/** Explicit number wins and skips the lookup; absent means "the current branch's PR". */
+async function resolvePr(repoPath: string, pr: string | undefined): Promise<PrIdentity> {
+  if (pr === undefined || pr === '') return detectPr(repoPath);
+  if (!/^\d+$/.test(pr)) {
+    throw new DiffError(400, 'pr mode needs a numeric pr param — the PR number to diff');
+  }
+  return { number: pr };
+}
+
+/** Always fetched by explicit number, so the patch provably belongs to the PR that was named. */
+async function prDiff(repoPath: string, pr: string): Promise<string> {
   return gh(repoPath, ['pr', 'diff', pr]);
 }
 
@@ -398,6 +467,7 @@ export async function computeDiff(
   // Echoed params hold exactly the keys the mode consumed (spec §3), so the
   // review pins them at submit and stray query params never leak in.
   let echo: Record<string, string> = {};
+  let prTitle: string | undefined;
   switch (mode) {
     case 'uncommitted':
       patch = await uncommittedDiff(repoPath);
@@ -409,10 +479,15 @@ export async function computeDiff(
       patch = await branchDiff(repoPath, params.base);
       echo = { base: params.base as string };
       break;
-    case 'pr':
-      patch = await prDiff(repoPath, params.pr);
-      echo = { pr: params.pr as string };
+    case 'pr': {
+      // Resolve first, then fetch by that number: the echo (which reviews pin)
+      // and the patch name the same pull request even mid-push
+      const identity = await resolvePr(repoPath, params.pr);
+      patch = await prDiff(repoPath, identity.number);
+      echo = { pr: identity.number };
+      prTitle = identity.title;
       break;
+    }
   }
 
   const bytes = Buffer.byteLength(patch);
@@ -429,7 +504,7 @@ export async function computeDiff(
   const files = await buildFiles(repoPath, segments, limits);
   const stubbed = new Set(files.filter((f) => f.stub).map((f) => f.path));
 
-  return {
+  const result: DiffResult = {
     mode,
     params: echo,
     hash: createHash('sha256').update(patch).digest('hex'),
@@ -440,4 +515,6 @@ export async function computeDiff(
       : patch,
     files,
   };
+  if (prTitle !== undefined) result.prTitle = prTitle;
+  return result;
 }
