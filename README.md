@@ -43,6 +43,8 @@ Pick the mode in the UI's top bar:
 
 Uncommitted and Last commit refresh themselves: while an agent is working the diff updates on screen within a few seconds, keeping your expanded files, file-tree state and single-file focus, and holding off while you are typing a comment. Branch and PR stay exactly as loaded.
 
+Uncommitted and Last commit refresh themselves: while an agent is working the diff updates on screen within a few seconds, keeping your expanded files, file-tree state and single-file focus, and holding off while you are typing a comment. Branch and PR stay exactly as loaded.
+
 ## The review → resolve loop
 
 1. Your agent finishes a change. Launch `npx lastlook` and open the URL.
