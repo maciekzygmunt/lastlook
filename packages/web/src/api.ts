@@ -6,6 +6,8 @@ export interface DiffFile {
   path: string;
   status: FileChangeStatus;
   changedLines: number;
+  /** Content identity of this file's patch segment, sent even for stubs whose patch is withheld. */
+  digest: string;
   oldPath?: string;
   binary?: boolean;
   size?: number;
@@ -100,6 +102,14 @@ export function fetchDiff(
   params: Record<string, string> = {}
 ): Promise<DiffResponse> {
   return request(`/api/diff?${new URLSearchParams({ mode, ...params })}`);
+}
+
+/** Change identity of the current diff, ~100 bytes — what the background poll asks for. */
+export function fetchDiffHash(
+  mode: DiffMode,
+  params: Record<string, string> = {}
+): Promise<{ hash: string; headSha: string }> {
+  return request(`/api/diff/hash?${new URLSearchParams({ mode, ...params })}`);
 }
 
 /** Load-on-demand for a stub file: its full patch segment from the current diff. */

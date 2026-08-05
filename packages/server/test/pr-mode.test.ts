@@ -109,9 +109,15 @@ describe('computeDiff — pr', () => {
     expect(diff.patch).toBe(FAKE_PATCH);
     // parsed from the patch headers: plain, space-in-name, and renamed files
     expect(diff.files).toEqual([
-      { path: 'greeting.txt', status: 'modified', changedLines: 1 },
-      { path: 'docs/my file.txt', status: 'modified', changedLines: 1 },
-      { path: 'renamed.txt', status: 'renamed', oldPath: 'old.txt', changedLines: 0 },
+      { path: 'greeting.txt', status: 'modified', changedLines: 1, digest: expect.any(String) },
+      { path: 'docs/my file.txt', status: 'modified', changedLines: 1, digest: expect.any(String) },
+      {
+        path: 'renamed.txt',
+        status: 'renamed',
+        oldPath: 'old.txt',
+        changedLines: 0,
+        digest: expect.any(String),
+      },
     ]);
     expect(diff.headSha).toBe(git(repo, 'rev-parse', 'HEAD').trim());
   });
@@ -193,5 +199,41 @@ describe('GET /api/diff?mode=pr', () => {
     const res = await makeApp(makeRepo()).request('/api/diff?mode=pr');
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: string }).error).toMatch(/pr/i);
+  });
+});
+
+describe('GET /api/diff/hash?mode=pr', () => {
+  function makeApp(repoPath: string) {
+    return createApp({
+      repoPath,
+      version: '0.1.0',
+      dataDir: join(tmpdir(), 'lastlook-unused-data'),
+    });
+  }
+
+  it('returns only the hash and headSha the full diff endpoint returns', async () => {
+    const repo = makeRepo();
+    process.env.PATH = makeBinDir(WORKING_GH) + delimiter + ORIGINAL_PATH;
+    const app = makeApp(repo);
+
+    const res = await app.request('/api/diff/hash?mode=pr&pr=42');
+    const full = (await (await app.request('/api/diff?mode=pr&pr=42')).json()) as Record<
+      string,
+      unknown
+    >;
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ hash: full.hash, headSha: full.headSha });
+  });
+
+  it('400s without a pr number, matching the full diff endpoint', async () => {
+    const app = makeApp(makeRepo());
+
+    const res = await app.request('/api/diff/hash?mode=pr');
+    const full = await app.request('/api/diff?mode=pr');
+
+    expect(res.status).toBe(400);
+    expect(res.status).toBe(full.status);
+    expect(await res.json()).toEqual(await full.json());
   });
 });
