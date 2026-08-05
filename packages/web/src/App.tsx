@@ -324,6 +324,12 @@ export default function App() {
     () => new Set([...draftStates].filter(([, s]) => s === 'drifted').map(([id]) => id)),
     [draftStates]
   );
+  // Orphans have no file section to render in, so the popover is the only place they are
+  // visible — without which the badge counts a draft the user cannot find (spec §Drift).
+  const orphanedIds = useMemo(
+    () => new Set([...draftStates].filter(([, s]) => s === 'orphaned').map(([id]) => id)),
+    [draftStates]
+  );
 
   // Inline notes: drafts and open always; resolved behind the toggle; dismissed never
   const visibleComments = useMemo(
@@ -553,8 +559,10 @@ export default function App() {
             {popoverOpen && (
               <ReviewPopover
                 drafts={drafts}
+                orphanedIds={orphanedIds}
                 submitting={submitting}
                 onSubmit={submitDrafts}
+                onDeleteDraft={removeDraft}
                 onClose={() => setPopoverOpen(false)}
               />
             )}
@@ -1195,13 +1203,18 @@ function CommentNote({
 
 function ReviewPopover({
   drafts,
+  orphanedIds,
   submitting,
   onSubmit,
+  onDeleteDraft,
   onClose,
 }: {
   drafts: Comment[];
+  /** Drafts whose file has left the diff — listed here because they render nowhere else. */
+  orphanedIds: ReadonlySet<string>;
   submitting: boolean;
   onSubmit: (summary: string) => void;
+  onDeleteDraft: (id: string) => void;
   onClose: () => void;
 }) {
   const [summary, setSummary] = useState('');
@@ -1226,7 +1239,20 @@ function ReviewPopover({
               <code>
                 {d.anchor.file} · {formatLines(d.anchor)}
               </code>
-              <span>{d.body}</span>
+              <span className="draft-body">{d.body}</span>
+              {/* An orphan is submitted like any other draft and never removed for the user
+                  (spec §Drift) — but this row is the only place it can be acted on, so the
+                  delete the note head would have offered lives here instead. */}
+              {orphanedIds.has(d.id) && (
+                <div className="orphan-foot">
+                  <span className="drift-mark" title="Submit it anyway, or delete it">
+                    File is no longer in the diff
+                  </span>
+                  <button className="ghost small" onClick={() => onDeleteDraft(d.id)}>
+                    Delete
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -1236,7 +1262,9 @@ function ReviewPopover({
           </button>
           <button
             className="primary small"
-            disabled={submitting}
+            // Deleting the last draft from a row empties the popover, and the server
+            // rejects a review with nothing in it.
+            disabled={submitting || drafts.length === 0}
             onClick={() => onSubmit(summary)}
           >
             {submitting

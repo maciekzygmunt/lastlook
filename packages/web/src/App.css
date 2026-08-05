@@ -626,10 +626,24 @@ button.primary:disabled {
   color: var(--muted);
 }
 
-.popover-drafts span {
+.popover-drafts .draft-body {
   color: var(--text);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+/* Orphaned draft (spec §Drift): its file has left the diff, so this row is the only place
+   it can be seen or acted on. Reuses the drift marker's pill — the same kind of second
+   fact about a note — with the delete the missing note head would have carried. */
+.orphan-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.orphan-foot button {
+  margin-left: auto;
 }
