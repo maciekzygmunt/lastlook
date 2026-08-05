@@ -2,27 +2,37 @@ import { describe, expect, it } from 'vitest';
 import type { DiffFile } from '../src/api';
 import { survivingStubs, treeKey } from '../src/refresh';
 
+/** Digest defaults per path, so two entries for the same file compare equal unless told otherwise. */
 function file(path: string, over: Partial<DiffFile> = {}): DiffFile {
-  return { path, status: 'modified', changedLines: 12, stub: true, ...over };
+  return { path, status: 'modified', changedLines: 12, digest: `d:${path}`, stub: true, ...over };
 }
 
 describe('survivingStubs', () => {
-  it('keeps a stub whose file entry is unchanged', () => {
+  it('keeps a stub whose file digest is unchanged', () => {
     const before = [file('src/a.ts'), file('src/b.ts')];
-    const after = [file('src/a.ts'), file('src/b.ts', { changedLines: 40 })];
+    const after = [file('src/a.ts'), file('src/b.ts', { digest: 'moved' })];
     expect(survivingStubs({ 'src/a.ts': 'A' }, before, after)).toEqual({ 'src/a.ts': 'A' });
   });
 
-  it('drops a stub whose file entry changed', () => {
+  it('drops a stub whose file digest moved', () => {
     expect(
-      survivingStubs({ 'src/a.ts': 'A' }, [file('src/a.ts')], [file('src/a.ts', { changedLines: 40 })])
+      survivingStubs({ 'src/a.ts': 'A' }, [file('src/a.ts')], [file('src/a.ts', { digest: 'moved' })])
     ).toEqual({});
-    expect(
-      survivingStubs({ 'src/a.ts': 'A' }, [file('src/a.ts')], [file('src/a.ts', { status: 'added' })])
-    ).toEqual({});
-    expect(
-      survivingStubs({ 'src/a.ts': 'A' }, [file('src/a.ts')], [file('src/a.ts', { stub: false })])
-    ).toEqual({});
+  });
+
+  // The case the old metadata comparison missed: a lockfile version bump is one
+  // line changed before and one line changed after, so only the digest moves
+  it('drops a stub whose content changed at an identical changed-line count', () => {
+    const before = [file('package-lock.json', { changedLines: 2, digest: 'v1' })];
+    const after = [file('package-lock.json', { changedLines: 2, digest: 'v2' })];
+    expect(survivingStubs({ 'package-lock.json': 'LOCK' }, before, after)).toEqual({});
+  });
+
+  // The digest is the sole signal; no metadata comparison survives alongside it
+  it('keeps a stub whose metadata moved but whose digest did not', () => {
+    const before = [file('src/a.ts', { changedLines: 12, status: 'modified' })];
+    const after = [file('src/a.ts', { changedLines: 40, status: 'added' })];
+    expect(survivingStubs({ 'src/a.ts': 'A' }, before, after)).toEqual({ 'src/a.ts': 'A' });
   });
 
   it('drops a stub for a file absent from the new diff', () => {
@@ -44,7 +54,7 @@ describe('survivingStubs', () => {
 describe('treeKey', () => {
   it('is stable across a content-only change', () => {
     expect(treeKey([file('src/a.ts'), file('src/b.ts')])).toBe(
-      treeKey([file('src/a.ts', { changedLines: 99, stub: false }), file('src/b.ts')])
+      treeKey([file('src/a.ts', { changedLines: 99, digest: 'moved', stub: false }), file('src/b.ts')])
     );
   });
 

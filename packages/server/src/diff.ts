@@ -42,6 +42,13 @@ export interface DiffFile {
   path: string;
   status: FileChangeStatus;
   changedLines: number;
+  /**
+   * Content identity of this file's patch segment. The client's only per-file change
+   * signal: stub files' segments are withheld from the response, so it cannot compute
+   * one itself, and the metadata above does not track content (a lockfile version bump
+   * has the same changed-line count before and after).
+   */
+  digest: string;
   /** Renames only: the pre-rename path (anchors always use `path`, spec §6.2). */
   oldPath?: string;
   binary?: boolean;
@@ -321,6 +328,11 @@ function isStub(segment: PatchSegment, limits: DiffLimits): boolean {
   );
 }
 
+/** Truncated: this detects change between two responses, it is not a security boundary. */
+function digestOf(text: string): string {
+  return createHash('sha256').update(text).digest('hex').slice(0, 16);
+}
+
 async function buildFiles(
   repoPath: string,
   segments: PatchSegment[],
@@ -332,6 +344,7 @@ async function buildFiles(
       path: segment.path,
       status: segment.status,
       changedLines: segment.changedLines,
+      digest: digestOf(segment.text),
     };
     if (segment.oldPath !== undefined) file.oldPath = segment.oldPath;
     if (segment.binary) {

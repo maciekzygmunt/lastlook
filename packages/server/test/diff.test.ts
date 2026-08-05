@@ -48,7 +48,9 @@ describe('computeDiff — uncommitted', () => {
     expect(diff.params).toEqual({});
     expect(diff.patch).toContain('diff --git a/tracked.txt b/tracked.txt');
     expect(diff.patch).toContain('+line 2 changed');
-    expect(diff.files).toEqual([{ path: 'tracked.txt', status: 'modified', changedLines: 2 }]);
+    expect(diff.files).toEqual([
+      { path: 'tracked.txt', status: 'modified', changedLines: 2, digest: expect.any(String) },
+    ]);
     expect(diff.headSha).toBe(git(repo, 'rev-parse', 'HEAD').trim());
   });
 
@@ -61,7 +63,9 @@ describe('computeDiff — uncommitted', () => {
     expect(diff.patch).toContain('diff --git a/brand-new.txt b/brand-new.txt');
     expect(diff.patch).toContain('--- /dev/null');
     expect(diff.patch).toContain('+new line 1');
-    expect(diff.files).toEqual([{ path: 'brand-new.txt', status: 'added', changedLines: 2 }]);
+    expect(diff.files).toEqual([
+      { path: 'brand-new.txt', status: 'added', changedLines: 2, digest: expect.any(String) },
+    ]);
     // index untouched: file is still untracked, nothing staged
     expect(git(repo, 'status', '--porcelain')).toContain('?? brand-new.txt');
     expect(git(repo, 'diff', '--cached', '--name-only')).toBe('');
@@ -100,7 +104,9 @@ describe('computeDiff — uncommitted', () => {
 
     expect(diff.patch).toContain('diff --git a/empty.txt b/empty.txt');
     expect(diff.patch).toContain('new file mode');
-    expect(diff.files).toEqual([{ path: 'empty.txt', status: 'added', changedLines: 0 }]);
+    expect(diff.files).toEqual([
+      { path: 'empty.txt', status: 'added', changedLines: 0, digest: expect.any(String) },
+    ]);
   });
 
   it('handles untracked files in subdirectories and with spaces in the name', async () => {
@@ -110,7 +116,11 @@ describe('computeDiff — uncommitted', () => {
 
     const diff = await computeDiff(repo, 'uncommitted');
 
-    expect(diff.files).toEqual([{ path: 'sub/with space.txt', status: 'added', changedLines: 1 }]);
+    expect(diff.files).toEqual([
+
+      { path: 'sub/with space.txt', status: 'added', changedLines: 1, digest: expect.any(String) },
+
+    ]);
     expect(diff.patch).toContain('+spaced');
   });
 
@@ -186,7 +196,9 @@ describe('computeDiff — branch', () => {
     // a diff vs main's tip would show main-only.txt as deleted
     expect(diff.patch).not.toContain('main-only');
     expect(diff.patch).not.toContain('noise');
-    expect(diff.files).toEqual([{ path: 'tracked.txt', status: 'modified', changedLines: 2 }]);
+    expect(diff.files).toEqual([
+      { path: 'tracked.txt', status: 'modified', changedLines: 2, digest: expect.any(String) },
+    ]);
     expect(diff.headSha).toBe(git(repo, 'rev-parse', 'HEAD').trim());
   });
 
@@ -259,9 +271,9 @@ describe('computeDiff — file metadata', () => {
     const diff = await computeDiff(repo, 'uncommitted');
 
     expect(diff.files).toEqual([
-      { path: 'gone.txt', status: 'deleted', changedLines: 1 },
-      { path: 'tracked.txt', status: 'modified', changedLines: 2 },
-      { path: 'brand-new.txt', status: 'added', changedLines: 2 },
+      { path: 'gone.txt', status: 'deleted', changedLines: 1, digest: expect.any(String) },
+      { path: 'tracked.txt', status: 'modified', changedLines: 2, digest: expect.any(String) },
+      { path: 'brand-new.txt', status: 'added', changedLines: 2, digest: expect.any(String) },
     ]);
   });
 
@@ -272,7 +284,13 @@ describe('computeDiff — file metadata', () => {
     const diff = await computeDiff(repo, 'uncommitted');
 
     expect(diff.files).toEqual([
-      { path: 'renamed.txt', status: 'renamed', oldPath: 'tracked.txt', changedLines: 0 },
+      {
+        path: 'renamed.txt',
+        status: 'renamed',
+        oldPath: 'tracked.txt',
+        changedLines: 0,
+        digest: expect.any(String),
+      },
     ]);
     expect(diff.patch).toContain('rename from tracked.txt');
     expect(diff.patch).toContain('rename to renamed.txt');
@@ -291,7 +309,13 @@ describe('computeDiff — file metadata', () => {
     const diff = await computeDiff(repo, 'uncommitted');
 
     expect(diff.files).toEqual([
-      { path: 'renamed.txt', status: 'renamed', oldPath: 'notes.txt', changedLines: 2 },
+      {
+        path: 'renamed.txt',
+        status: 'renamed',
+        oldPath: 'notes.txt',
+        changedLines: 2,
+        digest: expect.any(String),
+      },
     ]);
   });
 
@@ -308,7 +332,14 @@ describe('computeDiff — file metadata', () => {
     const diff = await computeDiff(repo, 'last-commit');
 
     expect(diff.files).toEqual([
-      { path: 'pic.bin', status: 'modified', binary: true, size: grown.length, changedLines: 0 },
+      {
+        path: 'pic.bin',
+        status: 'modified',
+        binary: true,
+        size: grown.length,
+        changedLines: 0,
+        digest: expect.any(String),
+      },
     ]);
     expect(diff.patch).toContain('Binary files a/pic.bin and b/pic.bin differ');
   });
@@ -326,8 +357,22 @@ describe('computeDiff — file metadata', () => {
     const diff = await computeDiff(repo, 'uncommitted');
 
     expect(diff.files).toEqual([
-      { path: 'pic.bin', status: 'modified', binary: true, size: edited.length, changedLines: 0 },
-      { path: 'fresh.bin', status: 'added', binary: true, size: fresh.length, changedLines: 0 },
+      {
+        path: 'pic.bin',
+        status: 'modified',
+        binary: true,
+        size: edited.length,
+        changedLines: 0,
+        digest: expect.any(String),
+      },
+      {
+        path: 'fresh.bin',
+        status: 'added',
+        binary: true,
+        size: fresh.length,
+        changedLines: 0,
+        digest: expect.any(String),
+      },
     ]);
   });
 });
@@ -344,8 +389,8 @@ describe('computeDiff — large diffs (spec §6.4)', () => {
     const diff = await computeDiff(repo, 'uncommitted', {}, LIMITS);
 
     expect(diff.files).toEqual([
-      { path: 'tracked.txt', status: 'modified', changedLines: 2 },
-      { path: 'big.txt', status: 'added', changedLines: 40, stub: true },
+      { path: 'tracked.txt', status: 'modified', changedLines: 2, digest: expect.any(String) },
+      { path: 'big.txt', status: 'added', changedLines: 40, stub: true, digest: expect.any(String) },
     ]);
     expect(diff.patch).toContain('+generated line 0');
     expect(diff.visiblePatch).toContain('+line 2 changed');
@@ -359,7 +404,7 @@ describe('computeDiff — large diffs (spec §6.4)', () => {
     const diff = await computeDiff(repo, 'uncommitted');
 
     expect(diff.files).toEqual([
-      { path: 'package-lock.json', status: 'added', changedLines: 3, stub: true },
+      { path: 'package-lock.json', status: 'added', changedLines: 3, stub: true, digest: expect.any(String) },
     ]);
     expect(diff.visiblePatch).toBe('');
     expect(diff.patch).toContain('"version": 1');
@@ -419,6 +464,81 @@ describe('computeDiff — hash', () => {
     writeFileSync(join(repo, 'tracked.txt'), 'line 1\nline 2 changed again\n');
     const third = await computeDiff(repo, 'uncommitted');
     expect(third.hash).not.toBe(first.hash);
+  });
+});
+
+describe('computeDiff — per-file digest', () => {
+  const digestOf = (diff: { files: { path: string; digest: string }[] }, path: string) =>
+    diff.files.find((f) => f.path === path)?.digest;
+
+  it('carries a distinct digest on every entry, stub and binary files included', async () => {
+    const repo = makeCommittedRepo();
+    writeFileSync(join(repo, 'tracked.txt'), 'line 1\nline 2 changed\n');
+    writeFileSync(join(repo, 'package-lock.json'), '{\n  "version": 1\n}\n');
+    writeFileSync(join(repo, 'pic.bin'), Buffer.from([0, 1, 2, 3]));
+
+    const diff = await computeDiff(repo, 'uncommitted');
+
+    expect(diff.files.map((f) => f.path).sort()).toEqual([
+      'package-lock.json',
+      'pic.bin',
+      'tracked.txt',
+    ]);
+    // package-lock.json is a stub, so its segment never reaches the response
+    expect(diff.files.find((f) => f.path === 'package-lock.json')?.stub).toBe(true);
+    for (const f of diff.files) expect(f.digest).toMatch(/^[0-9a-f]{16}$/);
+    expect(new Set(diff.files.map((f) => f.digest)).size).toBe(3);
+  });
+
+  it('is stable across calls and moves only for the file whose content changed', async () => {
+    const repo = makeCommittedRepo();
+    writeFileSync(join(repo, 'tracked.txt'), 'line 1\nline 2 changed\n');
+    writeFileSync(join(repo, 'other.txt'), 'untouched\n');
+
+    const first = await computeDiff(repo, 'uncommitted');
+    expect(await computeDiff(repo, 'uncommitted')).toEqual(first);
+
+    writeFileSync(join(repo, 'tracked.txt'), 'line 1\nline 2 changed again\n');
+    const second = await computeDiff(repo, 'uncommitted');
+
+    expect(digestOf(second, 'tracked.txt')).not.toBe(digestOf(first, 'tracked.txt'));
+    expect(digestOf(second, 'other.txt')).toBe(digestOf(first, 'other.txt'));
+  });
+
+  // The case file metadata cannot see: a lockfile version bump is one line changed
+  // before and one line changed after, on exactly the kind of file stubs exist for
+  it('moves when content changes but the changed-line count does not', async () => {
+    const repo = makeCommittedRepo();
+    writeFileSync(join(repo, 'package-lock.json'), '{ "version": "1.0.0" }\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-qm', 'add lockfile');
+
+    writeFileSync(join(repo, 'package-lock.json'), '{ "version": "1.0.1" }\n');
+    const first = await computeDiff(repo, 'uncommitted');
+    writeFileSync(join(repo, 'package-lock.json'), '{ "version": "1.0.2" }\n');
+    const second = await computeDiff(repo, 'uncommitted');
+
+    expect(first.files[0]?.changedLines).toBe(second.files[0]?.changedLines);
+    expect(digestOf(second, 'package-lock.json')).not.toBe(digestOf(first, 'package-lock.json'));
+  });
+
+  it('leaves the full-diff hash and the hash endpoint alone', async () => {
+    const repo = makeCommittedRepo();
+    writeFileSync(join(repo, 'tracked.txt'), 'line 1\nline 2 changed\n');
+    writeFileSync(join(repo, 'package-lock.json'), '{\n  "version": 1\n}\n');
+    const app = createApp({
+      repoPath: repo,
+      version: '0.1.0',
+      dataDir: join(tmpdir(), 'lastlook-unused-data'),
+    });
+
+    const diff = await computeDiff(repo, 'uncommitted');
+    const { createHash } = await import('node:crypto');
+
+    // the hash still covers the patch and nothing else — digests are not folded in
+    expect(diff.hash).toBe(createHash('sha256').update(diff.patch).digest('hex'));
+    const res = await app.request('/api/diff/hash?mode=uncommitted');
+    expect(await res.json()).toEqual({ hash: diff.hash, headSha: diff.headSha });
   });
 });
 
@@ -495,8 +615,8 @@ describe('GET /api/diff', () => {
     expect(body.patch).toContain('+line 2 changed');
     expect(body.patch).not.toContain('"version": 1');
     expect(body.files).toEqual([
-      { path: 'tracked.txt', status: 'modified', changedLines: 2 },
-      { path: 'package-lock.json', status: 'added', changedLines: 3, stub: true },
+      { path: 'tracked.txt', status: 'modified', changedLines: 2, digest: expect.any(String) },
+      { path: 'package-lock.json', status: 'added', changedLines: 3, stub: true, digest: expect.any(String) },
     ]);
   });
 

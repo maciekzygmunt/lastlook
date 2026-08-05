@@ -109,9 +109,15 @@ describe('computeDiff — pr', () => {
     expect(diff.patch).toBe(FAKE_PATCH);
     // parsed from the patch headers: plain, space-in-name, and renamed files
     expect(diff.files).toEqual([
-      { path: 'greeting.txt', status: 'modified', changedLines: 1 },
-      { path: 'docs/my file.txt', status: 'modified', changedLines: 1 },
-      { path: 'renamed.txt', status: 'renamed', oldPath: 'old.txt', changedLines: 0 },
+      { path: 'greeting.txt', status: 'modified', changedLines: 1, digest: expect.any(String) },
+      { path: 'docs/my file.txt', status: 'modified', changedLines: 1, digest: expect.any(String) },
+      {
+        path: 'renamed.txt',
+        status: 'renamed',
+        oldPath: 'old.txt',
+        changedLines: 0,
+        digest: expect.any(String),
+      },
     ]);
     expect(diff.headSha).toBe(git(repo, 'rev-parse', 'HEAD').trim());
   });

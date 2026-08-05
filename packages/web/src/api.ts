@@ -6,6 +6,8 @@ export interface DiffFile {
   path: string;
   status: FileChangeStatus;
   changedLines: number;
+  /** Content identity of this file's patch segment, sent even for stubs whose patch is withheld. */
+  digest: string;
   oldPath?: string;
   binary?: boolean;
   size?: number;
