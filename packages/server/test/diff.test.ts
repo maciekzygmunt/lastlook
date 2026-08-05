@@ -517,6 +517,107 @@ describe('GET /api/diff', () => {
   });
 });
 
+describe('GET /api/diff/hash', () => {
+  function makeApp(repoPath: string) {
+    return createApp({ repoPath, version: '0.1.0', dataDir: join(tmpdir(), 'lastlook-unused-data') });
+  }
+
+  it('returns only hash and headSha, equal to the full diff endpoint’s, for the local modes', async () => {
+    const repo = makeCommittedRepo();
+    writeFileSync(join(repo, 'tracked.txt'), 'line 1\nline 2 changed\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-qm', 'second');
+    writeFileSync(join(repo, 'brand-new.txt'), 'hello\n');
+    const app = makeApp(repo);
+
+    for (const mode of ['uncommitted', 'last-commit']) {
+      const res = await app.request(`/api/diff/hash?mode=${mode}`);
+      const full = (await (await app.request(`/api/diff?mode=${mode}`)).json()) as Record<
+        string,
+        unknown
+      >;
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ hash: full.hash, headSha: full.headSha });
+    }
+  });
+
+  it('takes branch mode’s base param, and 400s without it exactly as the full diff endpoint does', async () => {
+    const repo = makeCommittedRepo();
+    git(repo, 'branch', '-M', 'main');
+    git(repo, 'checkout', '-qb', 'feature');
+    writeFileSync(join(repo, 'tracked.txt'), 'line 1\nline 2 feature\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-qm', 'feature work');
+    const app = makeApp(repo);
+
+    const res = await app.request('/api/diff/hash?mode=branch&base=main');
+    const full = (await (await app.request('/api/diff?mode=branch&base=main')).json()) as Record<
+      string,
+      unknown
+    >;
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ hash: full.hash, headSha: full.headSha });
+
+    const missing = await app.request('/api/diff/hash?mode=branch');
+    const missingFull = await app.request('/api/diff?mode=branch');
+    expect(missing.status).toBe(400);
+    expect(missing.status).toBe(missingFull.status);
+    expect(await missing.json()).toEqual(await missingFull.json());
+
+    const badBase = await app.request('/api/diff/hash?mode=branch&base=no-such-branch');
+    const badBaseFull = await app.request('/api/diff?mode=branch&base=no-such-branch');
+    expect(badBase.status).toBe(badBaseFull.status);
+    expect(await badBase.json()).toEqual(await badBaseFull.json());
+  });
+
+  it('is stable while the diff is unchanged and changes when the diff moves', async () => {
+    const repo = makeCommittedRepo();
+    writeFileSync(join(repo, 'tracked.txt'), 'line 1\nline 2 changed\n');
+    const app = makeApp(repo);
+    const hash = async () =>
+      ((await (await app.request('/api/diff/hash?mode=uncommitted')).json()) as { hash: string })
+        .hash;
+
+    const first = await hash();
+    expect(await hash()).toBe(first);
+
+    writeFileSync(join(repo, 'tracked.txt'), 'line 1\nline 2 changed again\n');
+    expect(await hash()).not.toBe(first);
+  });
+
+  it('rejects a missing or unknown mode with the full diff endpoint’s 400 and message', async () => {
+    const app = makeApp(makeCommittedRepo());
+
+    for (const query of ['', '?mode=sideways']) {
+      const res = await app.request(`/api/diff/hash${query}`);
+      const full = await app.request(`/api/diff${query}`);
+
+      expect(res.status).toBe(400);
+      expect(res.status).toBe(full.status);
+      expect(await res.json()).toEqual(await full.json());
+    }
+  });
+
+  it('surfaces the 413 size cap the same way the full diff endpoint does', async () => {
+    const repo = makeCommittedRepo();
+    writeFileSync(join(repo, 'big.txt'), 'x'.repeat(2000) + '\n');
+    const app = createApp({
+      repoPath: repo,
+      version: '0.1.0',
+      dataDir: join(tmpdir(), 'lastlook-unused-data'),
+      limits: { maxPatchBytes: 1024, stubChangedLines: 3000 },
+    });
+
+    const res = await app.request('/api/diff/hash?mode=uncommitted');
+    const full = await app.request('/api/diff?mode=uncommitted');
+
+    expect(res.status).toBe(413);
+    expect(res.status).toBe(full.status);
+    expect(await res.json()).toEqual(await full.json());
+  });
+});
+
 describe('GET /api/diff/file', () => {
   function makeApp(repoPath: string) {
     return createApp({ repoPath, version: '0.1.0', dataDir: join(tmpdir(), 'lastlook-unused-data') });

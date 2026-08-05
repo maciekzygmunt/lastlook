@@ -115,6 +115,22 @@ export function createApp({
     }
   });
 
+  // Change identity only, for polling: the same computation as GET /api/diff, so the
+  // hash is identical for the same mode and params — ~100 bytes instead of the patch
+  app.get('/api/diff/hash', async (c) => {
+    const mode = c.req.query('mode');
+    if (!isDiffMode(mode)) {
+      return c.json({ error: `mode must be one of: ${DIFF_MODES.join(', ')}` }, 400);
+    }
+    try {
+      const diff = await computeDiff(repoPath, mode, queryDiffParams(c), limits);
+      return c.json({ hash: diff.hash, headSha: diff.headSha });
+    } catch (error) {
+      if (error instanceof DiffError) return c.json({ error: error.message }, error.status);
+      throw error;
+    }
+  });
+
   // Load-on-demand for stub files (spec §6.4): one file's full segment of the current diff
   app.get('/api/diff/file', async (c) => {
     const mode = c.req.query('mode');
