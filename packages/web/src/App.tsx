@@ -130,6 +130,10 @@ export default function App() {
   const shownHash = useRef<string | null>(null);
   // True while a hash poll is mid-flight, so the interval never runs two at once.
   const polling = useRef(false);
+  // Params the diff on screen was actually built from — the server's echo, not the
+  // request. In PR mode the request carries no number and the echo carries the
+  // resolved one, so any later fetch about this diff has to use this.
+  const shownParams = useRef<Record<string, string> | null>(null);
 
   useEffect(() => {
     fetchHealth().then(
@@ -203,6 +207,7 @@ export default function App() {
 
   useEffect(() => {
     shownHash.current = state.kind === 'ready' ? state.diff.hash : null;
+    shownParams.current = state.kind === 'ready' ? state.diff.params : null;
   }, [state]);
 
   /** The five things that must be idle before a swap; read live by the apply effect. */
@@ -396,7 +401,11 @@ export default function App() {
   const loadStub = useCallback(
     (path: string) =>
       mutate(async () => {
-        const { patch } = await fetchFilePatch(mode, params, path);
+        // Expanding a stub must read the diff already on screen, so it goes out under
+        // the echoed params. Sending the request's own would re-run PR resolution and
+        // could return a file from a different pull request than the one being
+        // reviewed — the review itself stays pinned to state.diff.params either way.
+        const { patch } = await fetchFilePatch(mode, shownParams.current ?? params, path);
         const parsed = parsePatchFiles(patch).flatMap((p) => p.files)[0];
         if (!parsed) throw new Error(`could not parse the diff for ${path}`);
         setLoadedStubs((prev) => ({ ...prev, [path]: parsed }));
