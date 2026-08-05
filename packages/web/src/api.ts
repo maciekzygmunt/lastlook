@@ -28,6 +28,8 @@ export interface HealthResponse {
   ok: boolean;
   repoPath: string;
   version: string;
+  /** The repo's default branch as a remote-tracking ref; seeds Branch mode's base. */
+  defaultBase: string;
 }
 
 export type Side = 'deletions' | 'additions';

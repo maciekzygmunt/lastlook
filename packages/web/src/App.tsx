@@ -91,7 +91,8 @@ function noteAnnotations(notes: Comment[]): DiffLineAnnotation<Anno>[] {
 
 export default function App() {
   const [mode, setMode] = useState<DiffMode>('uncommitted');
-  const [base, setBase] = useState('main');
+  // Empty until health reports the repo's default branch (spec §Web client — base input)
+  const [base, setBase] = useState('');
   const [pr, setPr] = useState('');
   // Bumped on every param commit so re-loading the same value retries the fetch
   const [paramAttempt, setParamAttempt] = useState(0);
@@ -132,8 +133,16 @@ export default function App() {
 
   useEffect(() => {
     fetchHealth().then(
-      (h) => setRepoPath(h.repoPath),
-      () => setRepoPath('')
+      (h) => {
+        setRepoPath(h.repoPath);
+        // Only seed: a base the user committed while health was in flight wins
+        setBase((b) => b || h.defaultBase);
+      },
+      () => {
+        setRepoPath('');
+        // Health is unreachable; unblock Branch mode rather than wedge it empty
+        setBase((b) => b || 'main');
+      }
     );
     fetchComments().then(setComments, (error: Error) => setApiError(error.message));
     fetchReviews().then(setReviews, (error: Error) => setApiError(error.message));
@@ -163,6 +172,9 @@ export default function App() {
       return;
     }
     setState({ kind: 'loading' });
+    // Health hasn't reported defaultBase yet — stay loading rather than fire an
+    // empty base at the server and render its 400
+    if (mode === 'branch' && base === '') return;
     fetchDiff(mode, params).then(
       (diff) => {
         if (!stale) setState({ kind: 'ready', diff });
@@ -174,7 +186,7 @@ export default function App() {
     return () => {
       stale = true;
     };
-  }, [mode, pr, params, paramAttempt]);
+  }, [mode, base, pr, params, paramAttempt]);
 
   /** Swap a freshly-fetched diff in place: no placeholder, keeping focus and live stubs. */
   const applyDiff = useCallback(
@@ -500,7 +512,9 @@ export default function App() {
           </nav>
           {mode === 'branch' && (
             <ParamForm
-              key="base"
+              // Keyed on the value: ParamForm seeds its text once, so a base
+              // arriving from health after mount has to remount to show up
+              key={`base-${base}`}
               value={base}
               placeholder="base branch"
               ariaLabel="Base branch"

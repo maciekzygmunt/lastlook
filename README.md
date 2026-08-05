@@ -38,7 +38,7 @@ Pick the mode in the UI's top bar:
 | --- | --- |
 | Uncommitted (default) | Worktree vs `HEAD`, including untracked files |
 | Last commit | `HEAD~1` vs `HEAD` |
-| Branch | Merge-base of a chosen base branch vs worktree |
+| Branch | `HEAD` vs its merge-base with the repository's default branch (`origin/main` or whatever `origin/HEAD` points at) — committed work only, editable base |
 | PR | A GitHub pull request, via the `gh` CLI |
 
 Uncommitted and Last commit refresh themselves: while an agent is working the diff updates on screen within a few seconds, keeping your expanded files, file-tree state and single-file focus, and holding off while you are typing a comment. Branch and PR stay exactly as loaded.

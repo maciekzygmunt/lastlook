@@ -202,6 +202,68 @@ describe('computeDiff — branch', () => {
     expect(diff.headSha).toBe(git(repo, 'rev-parse', 'HEAD').trim());
   });
 
+  /**
+   * A reviewer's clone whose local `main` is a commit behind `origin/main`, with
+   * the feature branch forked from the *remote* tip — the everyday state of any
+   * repo not pulled since a teammate pushed.
+   */
+  function makeStaleLocalBaseRepo(): string {
+    const origin = mkdtempSync(join(tmpdir(), 'lastlook-origin-'));
+    tmpdirs.push(origin);
+    git(origin, 'init', '-q', '--bare');
+    git(origin, 'symbolic-ref', 'HEAD', 'refs/heads/main');
+
+    const clone = (label: string): string => {
+      const parent = mkdtempSync(join(tmpdir(), `lastlook-${label}-`));
+      tmpdirs.push(parent);
+      const target = join(parent, 'work');
+      git(parent, 'clone', '-q', origin, target);
+      return realpathSync(target);
+    };
+
+    const teammate = clone('teammate');
+    writeFileSync(join(teammate, 'tracked.txt'), 'line 1\nline 2\n');
+    git(teammate, 'add', '-A');
+    git(teammate, 'commit', '-qm', 'init');
+    git(teammate, 'push', '-q', 'origin', 'HEAD:refs/heads/main');
+
+    // The reviewer clones here — local main pins this commit for good
+    const repo = clone('reviewer');
+
+    writeFileSync(join(teammate, 'theirs.txt'), 'not my work\n');
+    git(teammate, 'add', '-A');
+    git(teammate, 'commit', '-qm', 'teammate work');
+    git(teammate, 'push', '-q', 'origin', 'main');
+
+    // A plain fetch advances origin/main only; local main stays behind
+    git(repo, 'fetch', '-q', 'origin');
+    git(repo, 'checkout', '-qb', 'feature', 'origin/main');
+    writeFileSync(join(repo, 'mine.txt'), 'my work\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-qm', 'my work');
+    return repo;
+  }
+
+  it('forks from the remote-tracking base when the local branch is behind it', async () => {
+    const repo = makeStaleLocalBaseRepo();
+
+    const diff = await computeDiff(repo, 'branch', { base: 'origin/main' });
+
+    // The merge-base is the reviewer's real fork point: only their own commit shows
+    expect(diff.files.map((f) => f.path)).toEqual(['mine.txt']);
+    expect(diff.patch).not.toContain('theirs.txt');
+    expect(diff.params).toEqual({ base: 'origin/main' });
+  });
+
+  it('shows the defect a stale local base causes — other people’s commits leak in', async () => {
+    const repo = makeStaleLocalBaseRepo();
+
+    const diff = await computeDiff(repo, 'branch', { base: 'main' });
+
+    // Local main forks before the teammate's commit, so their file joins the review
+    expect(diff.files.map((f) => f.path).sort()).toEqual(['mine.txt', 'theirs.txt']);
+  });
+
   it('fails with 400 when the base param is missing', async () => {
     const repo = makeBranchedRepo();
 
