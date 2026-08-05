@@ -129,6 +129,8 @@ export default function App() {
   // Hash of what is on screen, as a ref so the poll does not take `state` as a
   // dependency and restart its interval on every swap.
   const shownHash = useRef<string | null>(null);
+  // True while a hash poll is mid-flight, so the interval never runs two at once.
+  const polling = useRef(false);
 
   useEffect(() => {
     fetchHealth().then(
@@ -228,6 +230,12 @@ export default function App() {
   // itself — that decision belongs to the effect below, which sees live state.
   const pollHash = useCallback(async () => {
     if (!autoRefreshes(mode)) return;
+    // Polls are serialized, not just epoch-guarded: a diff slower to fetch than the
+    // interval would otherwise have a second poll started underneath it, and whichever
+    // finished last would park — landing an older diff over a newer one until the tick
+    // after. diffEpoch cannot catch that, since a background swap does not bump it.
+    if (polling.current) return;
+    polling.current = true;
     const before = diffEpoch.current;
     try {
       const { hash } = await fetchDiffHash(mode, params);
@@ -241,6 +249,8 @@ export default function App() {
     } catch {
       // transient git or server failure — retried next tick, no error bar. The
       // poll running unconditionally is also how a diff in an error state recovers.
+    } finally {
+      polling.current = false;
     }
   }, [mode, params]);
 
