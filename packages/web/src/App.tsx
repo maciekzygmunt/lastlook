@@ -33,6 +33,7 @@ import {
 import { extractExcerpt } from './excerpt';
 import { formatBytes, formatDate, formatLines } from './format';
 import { anchorRange } from './range';
+import { survivingStubs, treeKey } from './refresh';
 import './App.css';
 
 const MODES: { id: DiffMode; label: string }[] = [
@@ -171,10 +172,11 @@ export default function App() {
 
   /** Re-fetch the current mode's diff in place (409 recovery) without resetting focus. */
   const refreshDiff = useCallback(async () => {
+    const previous = state.kind === 'ready' ? state.diff.files : [];
     const diff = await fetchDiff(mode, params);
-    setLoadedStubs({});
+    setLoadedStubs((stubs) => survivingStubs(stubs, previous, diff.files));
     setState({ kind: 'ready', diff });
-  }, [mode, params]);
+  }, [mode, params, state]);
 
   // The response patch omits stub files (spec §6.4), so rendering is driven by the
   // server's files[]; parsed segments back only the files whose content arrived.
@@ -436,9 +438,9 @@ export default function App() {
 
       <div className="body">
         <aside className="sidebar">
-          {/* useFileTree treats paths as initial config, so remount whenever the diff changes */}
+          {/* useFileTree treats paths as initial config, so remount when the file set changes */}
           {pastReview === null && state.kind === 'ready' && (
-            <Tree key={`${mode}:${state.diff.hash}`} files={files} onSelect={setSelectedFile} />
+            <Tree key={`${mode}:${treeKey(files)}`} files={files} onSelect={setSelectedFile} />
           )}
           <ReviewsPanel
             draftCount={drafts.length}
