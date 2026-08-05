@@ -234,8 +234,12 @@ async function currentBranch(repoPath: string): Promise<string | null> {
  */
 async function noPrMessage(repoPath: string): Promise<string> {
   const branch = await currentBranch(repoPath);
-  const where = branch === null ? 'HEAD is detached, not on a branch' : `branch "${branch}"`;
-  return `no pull request found for ${where} — push and open one, or use Branch mode`;
+  // Detached HEAD gets its own sentence: there is no branch to name, and "push
+  // and open one" is not the action that gets the reviewer unstuck
+  if (branch === null) {
+    return 'HEAD is detached, so there is no branch to find a pull request for — check out a branch, or use Branch mode';
+  }
+  return `no pull request found for branch "${branch}" — push and open one, or use Branch mode`;
 }
 
 /**

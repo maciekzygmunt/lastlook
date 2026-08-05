@@ -224,6 +224,9 @@ describe('computeDiff — pr', () => {
     expect(err).toBeInstanceOf(DiffError);
     expect((err as DiffError).status).toBe(400);
     expect((err as DiffError).message).toMatch(/detached/i);
+    // The branch-less advice: pushing is not what unsticks a detached HEAD
+    expect((err as DiffError).message).toMatch(/check out a branch/i);
+    expect((err as DiffError).message).not.toMatch(/push and open one/i);
     expect((err as DiffError).message).toMatch(/branch mode/i);
   });
 
