@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { DiffFile, DiffMode } from '../src/api';
-import { autoRefreshes, maySwap, survivingStubs, treeKey, type SwapState } from '../src/refresh';
+import type { CommentAnchor, DiffFile, DiffMode } from '../src/api';
+import {
+  autoRefreshes,
+  classifyAnchor,
+  maySwap,
+  survivingStubs,
+  treeKey,
+  type SwapState,
+} from '../src/refresh';
 
 /** Digest defaults per path, so two entries for the same file compare equal unless told otherwise. */
 function file(path: string, over: Partial<DiffFile> = {}): DiffFile {
@@ -124,5 +131,94 @@ describe('treeKey', () => {
     expect(treeKey([file('src/b.ts'), file('src/a.ts')])).toBe(
       treeKey([file('src/a.ts'), file('src/b.ts')])
     );
+  });
+});
+
+/** A line anchor over [startLine, endLine], holding the text those lines had when written. */
+function anchor(
+  path: string,
+  startLine: number,
+  endLine: number,
+  excerpt: string | null
+): CommentAnchor {
+  return { file: path, side: 'additions', startLine, endLine, excerpt };
+}
+
+/**
+ * Stands in for the app's reader of the current diff: the lines a file has now, joined
+ * over the anchor's range and skipping any it no longer reaches — the shape
+ * extractExcerpt produces. A file with no entry has no content on hand.
+ */
+function reader(now: Record<string, string[]>) {
+  return (a: CommentAnchor): string | null => {
+    const lines = now[a.file];
+    if (lines === undefined) return null;
+    return lines.slice((a.startLine ?? 1) - 1, a.endLine ?? 0).join('\n');
+  };
+}
+
+describe('classifyAnchor', () => {
+  const files = [file('src/a.ts'), file('src/b.ts')];
+  const now = reader({ 'src/a.ts': ['one', 'two', 'three'], 'src/b.ts': ['only'] });
+
+  it('is anchored while the text at its lines still matches its excerpt', () => {
+    expect(classifyAnchor(anchor('src/a.ts', 1, 2, 'one\ntwo'), files, now)).toBe('anchored');
+    expect(classifyAnchor(anchor('src/a.ts', 3, 3, 'three'), files, now)).toBe('anchored');
+  });
+
+  it('is drifted when the text at its lines no longer matches its excerpt', () => {
+    expect(classifyAnchor(anchor('src/a.ts', 1, 2, 'one\nTWO'), files, now)).toBe('drifted');
+    expect(classifyAnchor(anchor('src/a.ts', 1, 2, 'one'), files, now)).toBe('drifted');
+  });
+
+  it('is orphaned when its file has left the diff', () => {
+    expect(classifyAnchor(anchor('src/gone.ts', 1, 2, 'one\ntwo'), files, now)).toBe('orphaned');
+  });
+
+  // File presence is decided first: a file that left the diff is orphaned however its
+  // text reads, since there is no longer anywhere on screen for the note to render
+  it('is orphaned rather than anchored when a departed file would still match', () => {
+    const stale = reader({ 'src/gone.ts': ['one', 'two'] });
+    expect(classifyAnchor(anchor('src/gone.ts', 1, 2, 'one\ntwo'), files, stale)).toBe('orphaned');
+  });
+
+  // Binary files take a file-scoped anchor with a null excerpt (spec §6.3), so there is
+  // nothing to compare and file presence is the whole judgement
+  it('never drifts a file-scoped null-excerpt anchor', () => {
+    const fileScoped: CommentAnchor = {
+      file: 'src/a.ts',
+      side: null,
+      startLine: null,
+      endLine: null,
+      excerpt: null,
+    };
+    expect(classifyAnchor(fileScoped, files, now)).toBe('anchored');
+    expect(classifyAnchor(fileScoped, files, () => 'anything at all')).toBe('anchored');
+    expect(classifyAnchor({ ...fileScoped, file: 'src/gone.ts' }, files, now)).toBe('orphaned');
+  });
+
+  it('is drifted rather than throwing when its lines run past the end of the file', () => {
+    expect(classifyAnchor(anchor('src/a.ts', 40, 42, 'one\ntwo'), files, now)).toBe('drifted');
+    expect(classifyAnchor(anchor('src/b.ts', 1, 3, 'only\nmore'), files, now)).toBe('drifted');
+  });
+
+  // A stub file's patch is withheld (spec §6.4), so a collapsed one has no content on
+  // hand from the moment the page loads — marking that would cry drift on every reload
+  it('does not mark a file present in the diff whose content is not on hand', () => {
+    expect(classifyAnchor(anchor('src/a.ts', 1, 2, 'one\ntwo'), files, () => null)).toBe('anchored');
+    // ...and absent content still loses to a departed file
+    expect(classifyAnchor(anchor('src/gone.ts', 1, 2, 'one\ntwo'), files, () => null)).toBe(
+      'orphaned'
+    );
+  });
+
+  it('leaves the comment it classifies untouched', () => {
+    const drifted = anchor('src/a.ts', 1, 2, 'gone\nentirely');
+    const orphaned = anchor('src/gone.ts', 1, 2, 'one\ntwo');
+    classifyAnchor(drifted, files, now);
+    classifyAnchor(orphaned, files, now);
+    expect(drifted).toEqual(anchor('src/a.ts', 1, 2, 'gone\nentirely'));
+    expect(orphaned).toEqual(anchor('src/gone.ts', 1, 2, 'one\ntwo'));
+    expect(files).toEqual([file('src/a.ts'), file('src/b.ts')]);
   });
 });

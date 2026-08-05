@@ -1,4 +1,4 @@
-import type { DiffFile, DiffMode } from './api';
+import type { CommentAnchor, DiffFile, DiffMode } from './api';
 
 /**
  * Decisions behind an in-place diff refresh, as pure functions of their inputs.
@@ -78,4 +78,40 @@ export function treeKey(files: DiffFile[]): string {
     .map((f) => `${f.path}\t${f.status}`)
     .sort()
     .join('\n');
+}
+
+/** Where a comment stands against the diff currently on screen (spec §Drift). */
+export type AnchorState = 'anchored' | 'drifted' | 'orphaned';
+
+/**
+ * How a comment stands against the diff now on screen. Every anchor stores an `excerpt`
+ * — the code as it read when the draft was written — and comparing that with the text
+ * now at the same lines is the whole of drift detection.
+ *
+ * The result is a label and nothing more: no comment is moved, re-anchored or deleted
+ * here or anywhere downstream. Deleting what the user wrote because a background poll
+ * fired is the same harm as destroying composer text; marking is the entire
+ * intervention and the user decides while it is still a draft (spec §Drift).
+ *
+ * `currentExcerpt` reads the anchor's lines out of the current diff in the same form
+ * the excerpt was captured in, and returns null when that file's content is not on
+ * hand. Lines the file no longer reaches simply come back missing, so an anchor past
+ * the end of a shortened file drifts rather than throwing.
+ */
+export function classifyAnchor(
+  anchor: CommentAnchor,
+  files: DiffFile[],
+  currentExcerpt: (anchor: CommentAnchor) => string | null
+): AnchorState {
+  if (!files.some((f) => f.path === anchor.file)) return 'orphaned';
+  // File-scoped anchors (binary files) carry a null excerpt by construction, so file
+  // presence is the only thing they can be judged on — never drifted.
+  if (anchor.excerpt === null) return 'anchored';
+  const now = currentExcerpt(anchor);
+  // Absent content is not evidence of change: a stub file's patch is withheld by
+  // construction (spec §6.4), so a collapsed one has no content on hand from the
+  // moment the page loads. Marking that would cry drift on every reload. The mark
+  // fires only on code we can see has moved.
+  if (now === null) return 'anchored';
+  return now === anchor.excerpt ? 'anchored' : 'drifted';
 }

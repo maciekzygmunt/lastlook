@@ -34,7 +34,14 @@ import {
 import { extractExcerpt } from './excerpt';
 import { formatBytes, formatDate, formatLines } from './format';
 import { anchorRange } from './range';
-import { autoRefreshes, maySwap, survivingStubs, treeKey, type SwapState } from './refresh';
+import {
+  autoRefreshes,
+  classifyAnchor,
+  maySwap,
+  survivingStubs,
+  treeKey,
+  type SwapState,
+} from './refresh';
 import './App.css';
 
 const MODES: { id: DiffMode; label: string }[] = [
@@ -292,6 +299,31 @@ export default function App() {
   const files = state.kind === 'ready' ? state.diff.files : [];
   const visibleFiles = selectedFile ? files.filter((f) => f.path === selectedFile) : files;
   const drafts = useMemo(() => comments.filter((c) => c.status === 'draft'), [comments]);
+
+  // The same reading of the same lines that wrote the anchor's excerpt, run against the
+  // diff now on screen — so the two are comparable by construction. Null for a file
+  // whose content is not on hand: an unexpanded stub, whose patch is withheld (spec §6.4).
+  const currentExcerpt = useCallback(
+    (anchor: CommentAnchor): string | null => {
+      if (anchor.side === null || anchor.startLine === null || anchor.endLine === null) return null;
+      const parsed = loadedStubs[anchor.file] ?? parsedByPath.get(anchor.file);
+      if (!parsed) return null;
+      return extractExcerpt(parsed, anchor.side, anchor.startLine, anchor.endLine);
+    },
+    [loadedStubs, parsedByPath]
+  );
+
+  // Drafts the diff has moved under (spec §Drift). Only drafts: a submitted comment is
+  // already pinned to the diff it was submitted against. The drifted ones stay exactly
+  // where they are and are marked; the orphaned ones have no line left to render on.
+  const draftStates = useMemo(
+    () => new Map(drafts.map((d) => [d.id, classifyAnchor(d.anchor, files, currentExcerpt)])),
+    [drafts, files, currentExcerpt]
+  );
+  const driftedIds = useMemo(
+    () => new Set([...draftStates].filter(([, s]) => s === 'drifted').map(([id]) => id)),
+    [draftStates]
+  );
 
   // Inline notes: drafts and open always; resolved behind the toggle; dismissed never
   const visibleComments = useMemo(
@@ -606,6 +638,7 @@ export default function App() {
                   key={file.path}
                   file={file}
                   notes={notes}
+                  driftedIds={driftedIds}
                   onLoad={loadStub}
                   onDeleteDraft={removeDraft}
                   onDismiss={dismiss}
@@ -620,6 +653,7 @@ export default function App() {
                 diffStyle={diffStyle}
                 themeType={themeType}
                 notes={notes}
+                driftedIds={driftedIds}
                 composer={composer?.file === file.path ? composer : null}
                 editingId={editingId}
                 onOpenComposer={openComposer}
@@ -844,6 +878,8 @@ interface FileSectionProps {
   diffStyle: 'unified' | 'split';
   themeType: ThemeTypes;
   notes: Comment[];
+  /** Drafts whose code has changed under them; marked in place, never moved (spec §Drift). */
+  driftedIds: ReadonlySet<string>;
   composer: ComposerTarget | null;
   editingId: string | null;
   onOpenComposer: (target: ComposerTarget) => void;
@@ -864,6 +900,7 @@ function FileSection({
   diffStyle,
   themeType,
   notes,
+  driftedIds,
   composer,
   editingId,
   onOpenComposer,
@@ -979,6 +1016,7 @@ function FileSection({
           return (
             <CommentNote
               note={note}
+              drifted={driftedIds.has(note.id)}
               onEdit={note.status === 'draft' ? onEditDraft : undefined}
               onDelete={note.status === 'draft' ? onDeleteDraft : undefined}
               onDismiss={note.status === 'open' ? onDismiss : undefined}
@@ -1055,12 +1093,14 @@ function BinaryFileCard({
 function StubFileCard({
   file,
   notes,
+  driftedIds,
   onLoad,
   onDeleteDraft,
   onDismiss,
 }: {
   file: DiffFile;
   notes: Comment[];
+  driftedIds: ReadonlySet<string>;
   onLoad: (path: string) => void;
   onDeleteDraft: (id: string) => void;
   onDismiss: (id: string) => void;
@@ -1084,6 +1124,7 @@ function StubFileCard({
         <CommentNote
           key={note.id}
           note={note}
+          drifted={driftedIds.has(note.id)}
           onDelete={note.status === 'draft' ? onDeleteDraft : undefined}
           onDismiss={note.status === 'open' ? onDismiss : undefined}
         />
@@ -1101,11 +1142,13 @@ const CHIPS: Record<Comment['status'], { className: string; label: string }> = {
 
 function CommentNote({
   note,
+  drifted = false,
   onEdit,
   onDelete,
   onDismiss,
 }: {
   note: Comment;
+  drifted?: boolean;
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
   onDismiss?: (id: string) => void;
@@ -1116,6 +1159,11 @@ function CommentNote({
       <div className="note-head">
         <span className={`chip ${chip.className}`}>{chip.label}</span>
         <span className="muted">{formatLines(note.anchor)}</span>
+        {drifted && (
+          <span className="drift-mark" title="Edit or delete it before submitting">
+            Code changed since you wrote this
+          </span>
+        )}
         {(onEdit || onDelete || onDismiss) && (
           <div className="note-actions">
             {onEdit && (
