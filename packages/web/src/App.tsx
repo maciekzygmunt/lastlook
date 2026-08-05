@@ -37,6 +37,7 @@ import { anchorRange } from './range';
 import {
   autoRefreshes,
   classifyAnchor,
+  fileKey,
   maySwap,
   survivingStubs,
   treeKey,
@@ -656,7 +657,7 @@ export default function App() {
             if (!parsed) return null;
             return (
               <FileSection
-                key={file.path}
+                key={fileKey(file)}
                 file={parsed}
                 diffStyle={diffStyle}
                 themeType={themeType}

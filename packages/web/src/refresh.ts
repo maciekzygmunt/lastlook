@@ -69,6 +69,16 @@ export function survivingStubs<T>(
 }
 
 /**
+ * Identity of one file's diff view. FileDiff takes its file as initial config, the same
+ * way useFileTree takes its paths, so a swapped-in diff would go on rendering the content
+ * it mounted with — the staleness the mode-switch dance used to work around. Keying on
+ * the digest remounts exactly the files whose content moved and leaves the rest alone.
+ */
+export function fileKey(file: DiffFile): string {
+  return `${file.path}:${file.digest}`;
+}
+
+/**
  * Identity of a file list for the file tree, which treats its paths and statuses
  * as initial config and so must remount when either changes. Content-only changes
  * leave this key alone; the set of paths, and each path's status badge, move it.

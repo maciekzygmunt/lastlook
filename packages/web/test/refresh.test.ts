@@ -3,6 +3,7 @@ import type { CommentAnchor, DiffFile, DiffMode } from '../src/api';
 import {
   autoRefreshes,
   classifyAnchor,
+  fileKey,
   maySwap,
   survivingStubs,
   treeKey,
@@ -103,6 +104,28 @@ describe('survivingStubs', () => {
     const before = [file('src/a.ts'), file('src/b.ts')];
     const after = [file('src/b.ts'), file('src/a.ts')];
     expect(survivingStubs(loaded, before, after)).toEqual(loaded);
+  });
+});
+
+// FileDiff snapshots its file on mount, so a file whose content moved has to remount or
+// it goes on rendering what it first received — the staleness this whole feature is about
+describe('fileKey', () => {
+  it('moves when a file’s content moves', () => {
+    expect(fileKey(file('src/a.ts', { digest: 'v1' }))).not.toBe(
+      fileKey(file('src/a.ts', { digest: 'v2' }))
+    );
+  });
+
+  it('is stable while a file’s content is unchanged, so untouched files never remount', () => {
+    expect(fileKey(file('src/a.ts', { changedLines: 12 }))).toBe(
+      fileKey(file('src/a.ts', { changedLines: 40, status: 'added' }))
+    );
+  });
+
+  it('separates two files that share a digest', () => {
+    expect(fileKey(file('src/a.ts', { digest: 'same' }))).not.toBe(
+      fileKey(file('src/b.ts', { digest: 'same' }))
+    );
   });
 });
 
