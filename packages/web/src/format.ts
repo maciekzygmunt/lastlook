@@ -1,4 +1,4 @@
-import type { CommentAnchor } from './api';
+import type { CommentAnchor, DiffResponse } from './api';
 
 export function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -15,6 +15,19 @@ export function formatDate(iso: string): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+/**
+ * Topbar chip naming the pull request a PR-mode diff resolved to: `#42 · Add auth flow`.
+ * Null for the other modes, so the chip only ever describes a PR that actually loaded.
+ * The number comes from the echoed params — the same number the review would pin.
+ */
+export function prChipLabel(diff: DiffResponse): string | null {
+  if (diff.mode !== 'pr') return null;
+  const number = diff.params.pr;
+  if (!number) return null;
+  // A pull request can be untitled; the number alone still identifies it
+  return diff.prTitle ? `#${number} · ${diff.prTitle}` : `#${number}`;
 }
 
 /** Human label for where a comment anchors: a line, a range, or the whole file (spec §6.3). */

@@ -22,6 +22,8 @@ export interface DiffResponse {
   headSha: string;
   patch: string;
   files: DiffFile[];
+  /** Title of the resolved pull request; PR mode only, absent in the other modes. */
+  prTitle?: string;
 }
 
 export interface HealthResponse {
