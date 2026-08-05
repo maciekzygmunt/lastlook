@@ -1,11 +1,59 @@
 import { describe, expect, it } from 'vitest';
-import type { DiffFile } from '../src/api';
-import { survivingStubs, treeKey } from '../src/refresh';
+import type { DiffFile, DiffMode } from '../src/api';
+import { autoRefreshes, maySwap, survivingStubs, treeKey, type SwapState } from '../src/refresh';
 
 /** Digest defaults per path, so two entries for the same file compare equal unless told otherwise. */
 function file(path: string, over: Partial<DiffFile> = {}): DiffFile {
   return { path, status: 'modified', changedLines: 12, digest: `d:${path}`, stub: true, ...over };
 }
+
+describe('autoRefreshes', () => {
+  it.each<DiffMode>(['uncommitted', 'last-commit'])('polls in %s mode', (mode) => {
+    expect(autoRefreshes(mode)).toBe(true);
+  });
+
+  it.each<DiffMode>(['branch', 'pr'])('does not poll in %s mode', (mode) => {
+    expect(autoRefreshes(mode)).toBe(false);
+  });
+});
+
+const IDLE: SwapState = {
+  lineComposerOpen: false,
+  fileComposerOpen: false,
+  editingDraft: false,
+  submitPopoverOpen: false,
+  viewingPastReview: false,
+};
+
+const SUPPRESSORS = Object.keys(IDLE) as (keyof SwapState)[];
+
+describe('maySwap', () => {
+  // Derived from the type, so a sixth condition is covered the moment it is added
+  it('has a case for each of the five suppressing conditions', () => {
+    expect(SUPPRESSORS).toHaveLength(5);
+  });
+
+  it('allows a swap when nothing is open', () => {
+    expect(maySwap(IDLE)).toBe(true);
+  });
+
+  it.each(SUPPRESSORS)('denies a swap while %s', (condition) => {
+    const blocked: SwapState = { ...IDLE, [condition]: true };
+    expect(maySwap(blocked)).toBe(false);
+  });
+
+  it.each(SUPPRESSORS)('allows the deferred swap once %s clears', (condition) => {
+    const blocked: SwapState = { ...IDLE, [condition]: true };
+    expect(maySwap({ ...blocked, [condition]: false })).toBe(true);
+  });
+
+  it('stays denied until the last condition clears', () => {
+    const both = { ...IDLE, lineComposerOpen: true, submitPopoverOpen: true };
+    expect(maySwap({ ...both, lineComposerOpen: false })).toBe(false);
+    expect(maySwap({ ...both, submitPopoverOpen: false })).toBe(false);
+    expect(maySwap({ ...both, lineComposerOpen: false, submitPopoverOpen: false })).toBe(true);
+  });
+});
 
 describe('survivingStubs', () => {
   it('keeps a stub whose file digest is unchanged', () => {

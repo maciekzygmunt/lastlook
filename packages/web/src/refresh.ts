@@ -1,9 +1,51 @@
-import type { DiffFile } from './api';
+import type { DiffFile, DiffMode } from './api';
 
 /**
  * Decisions behind an in-place diff refresh, as pure functions of their inputs.
- * The app component owns the fetches and the state; every judgement lives here.
+ * The app component owns the timer, the visibility listener, the pending diff and
+ * the fetches; every judgement lives here.
  */
+
+/**
+ * Whether a mode polls for a moved diff. Uncommitted and last-commit are the two an
+ * agent moves while the user watches, and both are a local `git diff`. Branch is left
+ * out because it is the mode where the user deliberately reads a fixed range; PR is
+ * left out because it shells out to the GitHub CLI, so every poll would spend
+ * rate-limited network on a diff that moves when someone pushes, not when a file
+ * is saved. In the excluded modes the hash poll does not run at all.
+ */
+export function autoRefreshes(mode: DiffMode): boolean {
+  return mode === 'uncommitted' || mode === 'last-commit';
+}
+
+/** Everything that has to be idle before a fetched diff may replace the one on screen. */
+export interface SwapState {
+  lineComposerOpen: boolean;
+  fileComposerOpen: boolean;
+  editingDraft: boolean;
+  submitPopoverOpen: boolean;
+  viewingPastReview: boolean;
+}
+
+/**
+ * Whether a swap may be applied right now. A composer holds its typed text in local
+ * component state and nowhere else, so unmounting one during a swap destroys unsaved
+ * writing — the worst thing this feature could do. The submit popover must not have the
+ * diff move under it between opening and pressing the button, and a past review is a
+ * pinned snapshot that does not move at all.
+ *
+ * A fetch started before a composer opened can land after it, so callers ask this at
+ * apply time and not only when the fetch starts.
+ */
+export function maySwap(state: SwapState): boolean {
+  return !(
+    state.lineComposerOpen ||
+    state.fileComposerOpen ||
+    state.editingDraft ||
+    state.submitPopoverOpen ||
+    state.viewingPastReview
+  );
+}
 
 /**
  * The loaded stubs that survive an old-diff → new-diff swap. A stub is kept only

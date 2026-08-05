@@ -15,6 +15,7 @@ import {
   dismissComment,
   fetchComments,
   fetchDiff,
+  fetchDiffHash,
   fetchFilePatch,
   fetchHealth,
   fetchReview,
@@ -33,7 +34,7 @@ import {
 import { extractExcerpt } from './excerpt';
 import { formatBytes, formatDate, formatLines } from './format';
 import { anchorRange } from './range';
-import { survivingStubs, treeKey } from './refresh';
+import { autoRefreshes, maySwap, survivingStubs, treeKey, type SwapState } from './refresh';
 import './App.css';
 
 const MODES: { id: DiffMode; label: string }[] = [
@@ -42,6 +43,9 @@ const MODES: { id: DiffMode; label: string }[] = [
   { id: 'pr', label: 'PR' },
   { id: 'last-commit', label: 'Last commit' },
 ];
+
+/** The app's whole background cadence: one interval drives both polls (spec §Cadence). */
+const POLL_MS = 3000;
 
 type DiffState =
   | { kind: 'loading' }
@@ -106,6 +110,17 @@ export default function App() {
   // Bumped on every local comment mutation so a poll response started before
   // the mutation can't overwrite the fresher local state.
   const commentsEpoch = useRef(0);
+  // The same guard one level up: bumped whenever the displayed diff is replaced out
+  // from under an in-flight background fetch, so a fetch of the previous mode's diff
+  // cannot land afterwards and park itself as pending.
+  const diffEpoch = useRef(0);
+  // A diff the hash poll has already fetched, held until a swap is permitted.
+  const pendingDiff = useRef<DiffResponse | null>(null);
+  // Bumped when a diff parks above, to run the apply effect.
+  const [pendingSeq, setPendingSeq] = useState(0);
+  // Hash of what is on screen, as a ref so the poll does not take `state` as a
+  // dependency and restart its interval on every swap.
+  const shownHash = useRef<string | null>(null);
 
   useEffect(() => {
     fetchHealth().then(
@@ -114,25 +129,6 @@ export default function App() {
     );
     fetchComments().then(setComments, (error: Error) => setApiError(error.message));
     fetchReviews().then(setReviews, (error: Error) => setApiError(error.message));
-  }, []);
-
-  // Live status updates: the agent resolves comments out-of-band, so poll for
-  // flips instead of requiring a manual reload. Errors are ignored — the next
-  // tick retries, and user-initiated calls surface their own errors.
-  useEffect(() => {
-    const id = setInterval(async () => {
-      const before = commentsEpoch.current;
-      try {
-        const fresh = await fetchComments();
-        if (commentsEpoch.current !== before) return;
-        setComments((prev) =>
-          JSON.stringify(prev) === JSON.stringify(fresh) ? prev : fresh
-        );
-      } catch {
-        // server briefly unreachable — retry next tick
-      }
-    }, 3000);
-    return () => clearInterval(id);
   }, []);
 
   // Mode params sent to /api/diff; `base`/`pr` hold committed values (the
@@ -146,6 +142,8 @@ export default function App() {
 
   useEffect(() => {
     let stale = false;
+    diffEpoch.current++;
+    pendingDiff.current = null;
     setSelectedFile(null);
     setComposer(null);
     setFileComposer(null);
@@ -170,13 +168,118 @@ export default function App() {
     };
   }, [mode, pr, params, paramAttempt]);
 
+  /** Swap a freshly-fetched diff in place: no placeholder, keeping focus and live stubs. */
+  const applyDiff = useCallback(
+    (diff: DiffResponse) => {
+      const previous = state.kind === 'ready' ? state.diff.files : [];
+      setLoadedStubs((stubs) => survivingStubs(stubs, previous, diff.files));
+      setState({ kind: 'ready', diff });
+    },
+    [state]
+  );
+
   /** Re-fetch the current mode's diff in place (409 recovery) without resetting focus. */
   const refreshDiff = useCallback(async () => {
-    const previous = state.kind === 'ready' ? state.diff.files : [];
-    const diff = await fetchDiff(mode, params);
-    setLoadedStubs((stubs) => survivingStubs(stubs, previous, diff.files));
-    setState({ kind: 'ready', diff });
-  }, [mode, params, state]);
+    diffEpoch.current++;
+    pendingDiff.current = null;
+    applyDiff(await fetchDiff(mode, params));
+  }, [mode, params, applyDiff]);
+
+  useEffect(() => {
+    shownHash.current = state.kind === 'ready' ? state.diff.hash : null;
+  }, [state]);
+
+  /** The five things that must be idle before a swap; read live by the apply effect. */
+  const swapState = useMemo<SwapState>(
+    () => ({
+      lineComposerOpen: composer !== null,
+      fileComposerOpen: fileComposer !== null,
+      editingDraft: editingId !== null,
+      submitPopoverOpen: popoverOpen,
+      viewingPastReview: pastReview !== null,
+    }),
+    [composer, fileComposer, editingId, popoverOpen, pastReview]
+  );
+
+  // Live status updates: the agent resolves comments out-of-band, so poll for
+  // flips instead of requiring a manual reload. Errors are ignored — the next
+  // tick retries, and user-initiated calls surface their own errors.
+  const pollComments = useCallback(async () => {
+    const before = commentsEpoch.current;
+    try {
+      const fresh = await fetchComments();
+      if (commentsEpoch.current !== before) return;
+      setComments((prev) => (JSON.stringify(prev) === JSON.stringify(fresh) ? prev : fresh));
+    } catch {
+      // server briefly unreachable — retry next tick
+    }
+  }, []);
+
+  // Watch the underlying diff move (spec §Detection): ~100 bytes per tick, and the
+  // full diff only once the hash says it is worth fetching. Never applies the result
+  // itself — that decision belongs to the effect below, which sees live state.
+  const pollHash = useCallback(async () => {
+    if (!autoRefreshes(mode)) return;
+    const before = diffEpoch.current;
+    try {
+      const { hash } = await fetchDiffHash(mode, params);
+      // A parked diff is the newest thing known, so compare against it first —
+      // otherwise a swap held up by a composer refetches the same patch every tick.
+      if (hash === (pendingDiff.current?.hash ?? shownHash.current)) return;
+      const diff = await fetchDiff(mode, params);
+      if (diffEpoch.current !== before) return;
+      pendingDiff.current = diff;
+      setPendingSeq((n) => n + 1);
+    } catch {
+      // transient git or server failure — retried next tick, no error bar. The
+      // poll running unconditionally is also how a diff in an error state recovers.
+    }
+  }, [mode, params]);
+
+  // One timer for both polls (spec §Cadence), gated on visibility: it stops while the
+  // tab is hidden and fires immediately on return rather than up to POLL_MS later,
+  // which is what makes the diff current the moment the user looks at it.
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const tick = () => {
+      void pollComments();
+      void pollHash();
+    };
+    const stop = () => {
+      if (timer !== undefined) clearInterval(timer);
+      timer = undefined;
+    };
+    const start = () => {
+      stop();
+      timer = setInterval(tick, POLL_MS);
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stop();
+        return;
+      }
+      tick();
+      start();
+    };
+
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [pollComments, pollHash]);
+
+  // The only place a polled diff is applied. Suppression is judged here, on live state,
+  // so a fetch that lands after a composer opened waits instead of destroying what is
+  // typed in it; the diff is retained meanwhile and lands the moment the condition
+  // clears, because clearing it re-runs this effect (spec §Deferral).
+  useEffect(() => {
+    const diff = pendingDiff.current;
+    if (diff === null || !maySwap(swapState)) return;
+    pendingDiff.current = null;
+    applyDiff(diff);
+  }, [pendingSeq, swapState, applyDiff]);
 
   // The response patch omits stub files (spec §6.4), so rendering is driven by the
   // server's files[]; parsed segments back only the files whose content arrived.

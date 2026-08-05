@@ -104,6 +104,14 @@ export function fetchDiff(
   return request(`/api/diff?${new URLSearchParams({ mode, ...params })}`);
 }
 
+/** Change identity of the current diff, ~100 bytes — what the background poll asks for. */
+export function fetchDiffHash(
+  mode: DiffMode,
+  params: Record<string, string> = {}
+): Promise<{ hash: string; headSha: string }> {
+  return request(`/api/diff/hash?${new URLSearchParams({ mode, ...params })}`);
+}
+
 /** Load-on-demand for a stub file: its full patch segment from the current diff. */
 export function fetchFilePatch(
   mode: DiffMode,
