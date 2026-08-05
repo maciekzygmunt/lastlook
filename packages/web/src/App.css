@@ -73,6 +73,14 @@
   padding: 2px 7px;
 }
 
+/* Same chip, but a PR title runs long — truncate rather than shove the topbar around */
+.pr-chip {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mode-switch {
   display: flex;
   border: 1px solid var(--divider);

@@ -5,6 +5,7 @@ import {
   DiffError,
   computeDiff,
   extractFilePatch,
+  resolveDefaultBase,
   type DiffLimits,
   type DiffMode,
   type DiffParams,
@@ -30,6 +31,8 @@ export interface HealthResponse {
   ok: boolean;
   repoPath: string;
   version: string;
+  /** Branch mode's seed: the repo's default branch as a remote-tracking ref. */
+  defaultBase: string;
 }
 
 function isDiffMode(mode: string | undefined): mode is DiffMode {
@@ -91,7 +94,11 @@ export function createApp({
   const app = new Hono();
   const store = new Store(dataDir);
 
-  app.get('/api/health', (c) => c.json({ ok: true, repoPath, version }));
+  // Carries defaultBase so the web client can seed Branch mode off the startup
+  // health call it already makes — no extra endpoint, no extra round-trip
+  app.get('/api/health', async (c) =>
+    c.json({ ok: true, repoPath, version, defaultBase: await resolveDefaultBase(repoPath) })
+  );
 
   app.get('/api/diff', async (c) => {
     const mode = c.req.query('mode');
@@ -108,6 +115,8 @@ export function createApp({
         headSha: diff.headSha,
         patch: diff.visiblePatch,
         files: diff.files,
+        // PR mode only; JSON-dropped when absent, so the other modes are unchanged
+        prTitle: diff.prTitle,
       });
     } catch (error) {
       if (error instanceof DiffError) return c.json({ error: error.message }, error.status);

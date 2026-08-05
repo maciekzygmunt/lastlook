@@ -32,7 +32,7 @@ import {
   type Side,
 } from './api';
 import { extractExcerpt } from './excerpt';
-import { formatBytes, formatDate, formatLines } from './format';
+import { formatBytes, formatDate, formatLines, prChipLabel } from './format';
 import { anchorRange } from './range';
 import {
   autoRefreshes,
@@ -57,7 +57,6 @@ const POLL_MS = 3000;
 
 type DiffState =
   | { kind: 'loading' }
-  | { kind: 'prompt'; message: string }
   | { kind: 'error'; message: string }
   | { kind: 'ready'; diff: DiffResponse };
 
@@ -91,8 +90,8 @@ function noteAnnotations(notes: Comment[]): DiffLineAnnotation<Anno>[] {
 
 export default function App() {
   const [mode, setMode] = useState<DiffMode>('uncommitted');
-  const [base, setBase] = useState('main');
-  const [pr, setPr] = useState('');
+  // Empty until health reports the repo's default branch (spec §Web client — base input)
+  const [base, setBase] = useState('');
   // Bumped on every param commit so re-loading the same value retries the fetch
   const [paramAttempt, setParamAttempt] = useState(0);
   const [diffStyle, setDiffStyle] = useState<'unified' | 'split'>('split');
@@ -131,24 +130,36 @@ export default function App() {
   const shownHash = useRef<string | null>(null);
   // True while a hash poll is mid-flight, so the interval never runs two at once.
   const polling = useRef(false);
+  // Params the diff on screen was actually built from — the server's echo, not the
+  // request. In PR mode the request carries no number and the echo carries the
+  // resolved one, so any later fetch about this diff has to use this.
+  const shownParams = useRef<Record<string, string> | null>(null);
 
   useEffect(() => {
     fetchHealth().then(
-      (h) => setRepoPath(h.repoPath),
-      () => setRepoPath('')
+      (h) => {
+        setRepoPath(h.repoPath);
+        // Only seed: a base the user committed while health was in flight wins
+        setBase((b) => b || h.defaultBase);
+      },
+      () => {
+        setRepoPath('');
+        // Health is unreachable; unblock Branch mode rather than wedge it empty
+        setBase((b) => b || 'main');
+      }
     );
     fetchComments().then(setComments, (error: Error) => setApiError(error.message));
     fetchReviews().then(setReviews, (error: Error) => setApiError(error.message));
   }, []);
 
-  // Mode params sent to /api/diff; `base`/`pr` hold committed values (the
-  // inputs keep their own text until the user loads it)
+  // Mode params sent to /api/diff; `base` holds the committed value (the input
+  // keeps its own text until the user loads it). PR mode sends nothing — the
+  // server resolves the current branch's pull request itself.
   const params = useMemo(() => {
     const p: Record<string, string> = {};
     if (mode === 'branch') p.base = base;
-    if (mode === 'pr') p.pr = pr;
     return p;
-  }, [mode, base, pr]);
+  }, [mode, base]);
 
   useEffect(() => {
     let stale = false;
@@ -160,11 +171,10 @@ export default function App() {
     setLoadedStubs({});
     // Touching the mode controls is a return to the current diff
     setPastReview(null);
-    if (mode === 'pr' && pr === '') {
-      setState({ kind: 'prompt', message: 'Enter a PR number to load its diff.' });
-      return;
-    }
     setState({ kind: 'loading' });
+    // Health hasn't reported defaultBase yet — stay loading rather than fire an
+    // empty base at the server and render its 400
+    if (mode === 'branch' && base === '') return;
     fetchDiff(mode, params).then(
       (diff) => {
         if (!stale) setState({ kind: 'ready', diff });
@@ -176,7 +186,7 @@ export default function App() {
     return () => {
       stale = true;
     };
-  }, [mode, pr, params, paramAttempt]);
+  }, [mode, base, params, paramAttempt]);
 
   /** Swap a freshly-fetched diff in place: no placeholder, keeping focus and live stubs. */
   const applyDiff = useCallback(
@@ -197,6 +207,7 @@ export default function App() {
 
   useEffect(() => {
     shownHash.current = state.kind === 'ready' ? state.diff.hash : null;
+    shownParams.current = state.kind === 'ready' ? state.diff.params : null;
   }, [state]);
 
   /** The five things that must be idle before a swap; read live by the apply effect. */
@@ -308,6 +319,8 @@ export default function App() {
   }, [state]);
 
   const files = state.kind === 'ready' ? state.diff.files : [];
+  // Null outside PR mode, and while a pull request is still resolving or has failed
+  const prChip = state.kind === 'ready' ? prChipLabel(state.diff) : null;
   const visibleFiles = selectedFile ? files.filter((f) => f.path === selectedFile) : files;
   const drafts = useMemo(() => comments.filter((c) => c.status === 'draft'), [comments]);
 
@@ -388,7 +401,11 @@ export default function App() {
   const loadStub = useCallback(
     (path: string) =>
       mutate(async () => {
-        const { patch } = await fetchFilePatch(mode, params, path);
+        // Expanding a stub must read the diff already on screen, so it goes out under
+        // the echoed params. Sending the request's own would re-run PR resolution and
+        // could return a file from a different pull request than the one being
+        // reviewed — the review itself stays pinned to state.diff.params either way.
+        const { patch } = await fetchFilePatch(mode, shownParams.current ?? params, path);
         const parsed = parsePatchFiles(patch).flatMap((p) => p.files)[0];
         if (!parsed) throw new Error(`could not parse the diff for ${path}`);
         setLoadedStubs((prev) => ({ ...prev, [path]: parsed }));
@@ -502,7 +519,13 @@ export default function App() {
               <button
                 key={m.id}
                 className={mode === m.id ? 'active' : ''}
-                onClick={() => setMode(m.id)}
+                onClick={() => {
+                  setMode(m.id);
+                  // PR mode has no input to re-submit, so clicking the segment it is
+                  // already on is the only way to pick up a pull request opened since
+                  // — or to retry after the no-pull-request error.
+                  if (m.id === 'pr' && mode === 'pr') setParamAttempt((a) => a + 1);
+                }}
               >
                 {m.label}
               </button>
@@ -510,7 +533,9 @@ export default function App() {
           </nav>
           {mode === 'branch' && (
             <ParamForm
-              key="base"
+              // Keyed on the value: ParamForm seeds its text once, so a base
+              // arriving from health after mount has to remount to show up
+              key={`base-${base}`}
               value={base}
               placeholder="base branch"
               ariaLabel="Base branch"
@@ -520,18 +545,11 @@ export default function App() {
               }}
             />
           )}
-          {mode === 'pr' && (
-            <ParamForm
-              key="pr"
-              value={pr}
-              placeholder="PR number"
-              ariaLabel="PR number"
-              pattern="[0-9]+"
-              onCommit={(v) => {
-                setPr(v);
-                setParamAttempt((a) => a + 1);
-              }}
-            />
+          {/* Read-only: PR mode takes no input, so this only reports what resolved */}
+          {prChip && (
+            <span className="repo-chip pr-chip" title={prChip}>
+              {prChip}
+            </span>
           )}
         </div>
         <div className="topbar-right">
@@ -618,7 +636,6 @@ export default function App() {
         ) : (
         <main className="diffs">
           {state.kind === 'loading' && <p className="placeholder">Loading diff…</p>}
-          {state.kind === 'prompt' && <p className="placeholder">{state.message}</p>}
           {state.kind === 'error' && <p className="placeholder error">{state.message}</p>}
           {state.kind === 'ready' && files.length === 0 && (
             <p className="placeholder">No changes in this diff.</p>

@@ -22,12 +22,16 @@ export interface DiffResponse {
   headSha: string;
   patch: string;
   files: DiffFile[];
+  /** Title of the resolved pull request; PR mode only, absent in the other modes. */
+  prTitle?: string;
 }
 
 export interface HealthResponse {
   ok: boolean;
   repoPath: string;
   version: string;
+  /** The repo's default branch as a remote-tracking ref; seeds Branch mode's base. */
+  defaultBase: string;
 }
 
 export type Side = 'deletions' | 'additions';
