@@ -2,69 +2,72 @@
 
 **One last look before you ship.**
 
-lastlook is a local code-review app for agent-written changes. Run it inside any git repo, review the diff in your browser with inline comments (GitHub-style draft → submit), then tell your CLI agent (Claude Code, Codex, Cursor, …) to fetch and resolve those comments over plain HTTP.
-
-Everything stays on localhost. Nothing is ever written into the repo being reviewed.
-
-## Why
-
-Agents write a lot of code, and reading it in terminal scroll-back is a bad way to catch problems. lastlook gives you a real diff viewer with inline comments — and closes the loop by exposing those comments over a local HTTP API, so the agent that wrote the code can fix them and mark them resolved while you watch.
-
-## Quick start
+A local code-review app for agent-written changes. Run it in any git repo, review the diff in your browser with inline comments, then tell your agent to fix them.
 
 ```sh
 cd your-repo
 npx lastlook
 ```
 
-That prints one line — `lastlook — /path/to/repo — http://localhost:4700` — and stays in the foreground. Open the URL, review, Ctrl-C to stop. The web UI ships prebuilt in the package; there is no build step.
+Everything stays on localhost. Nothing is written into the repo you review.
 
-**Requirements:** Node ≥ 20 and git. The `gh` CLI (authenticated) is needed only for PR mode — every other mode works without it.
+![The lastlook diff viewer, with an inline comment on a changed line](docs/images/review.png)
 
-### CLI flags
+## Why
 
-| Flag | Effect |
-| --- | --- |
-| `--open` | Also launch your browser (default is print-the-URL only; `$BROWSER` overrides the platform opener) |
-| `--force` | Stop and replace an already-running lastlook for this repo. Without it, a second launch just prints the running server's URL and exits |
+Agents write a lot of code. Terminal scroll-back is a bad place to read it.
 
-The server listens on port 4700, scanning upward (4701, 4702, …) on conflict.
+lastlook gives you a real diff viewer with inline comments — and closes the loop: the comments go out over a local HTTP API, so the agent that wrote the code fixes them and marks them resolved while you watch.
 
-## Diff modes
+## The loop
 
-Pick the mode in the UI's top bar:
+**1. Comment.** Click a line, or drag a range. Draft comments, then submit them as one review. Submitting pins a snapshot of the diff, so later edits never shift your comments.
 
-| Mode | Shows |
-| --- | --- |
-| Uncommitted (default) | Worktree vs `HEAD`, including untracked files |
-| Last commit | `HEAD~1` vs `HEAD` |
-| Branch | `HEAD` vs its merge-base with the repository's default branch (`origin/main` or whatever `origin/HEAD` points at) — committed work only, editable base |
-| PR | The current branch's pull request on GitHub, resolved for you via the `gh` CLI — no number to look up |
+![Writing an inline comment on a selected line](docs/images/comment.png)
 
-Uncommitted and Last commit refresh themselves: while an agent is working the diff updates on screen within a few seconds, keeping your expanded files, file-tree state and single-file focus, and holding off while you are typing a comment. Branch and PR stay exactly as loaded.
+**2. Hand it back.** In your agent, run `/resolve-lastlook`. It reads the open comments over HTTP, fixes each one, and flips it to resolved. The chips update live in the browser.
 
-Uncommitted and Last commit refresh themselves: while an agent is working the diff updates on screen within a few seconds, keeping your expanded files, file-tree state and single-file focus, and holding off while you are typing a comment. Branch and PR stay exactly as loaded.
+![One comment still open, one already resolved by the agent](docs/images/resolved.png)
 
-## The review → resolve loop
+**3. Repeat.** Comments the agent disagrees with stay open with an explanation — dismiss them yourself. The next round is a new review.
 
-1. Your agent finishes a change. Launch `npx lastlook` and open the URL.
-2. Click a line number (or drag a range) in the diff to draft inline comments; submit them as one review. Submitting pins a snapshot of the diff — later code changes never shift your comments.
-3. In your agent, run `/resolve-lastlook`. It fetches the open comments over HTTP, fixes each one in the code, and flips it to resolved — you watch the status chips update live in the UI.
-4. Comments the agent disagrees with (or that need no change) stay open with an explanation; dismiss them in the UI. The next round of feedback is a new review.
+## Install the agent skill
 
-### Installing the agent skill
-
-The `resolve-lastlook` skill is distributed with the [skills CLI](https://github.com/vercel-labs/skills), which installs it for Claude Code, Codex, Cursor, and friends:
+`resolve-lastlook` ships through the [skills CLI](https://github.com/vercel-labs/skills), which installs it for Claude Code, Codex, Cursor, and friends:
 
 ```sh
 npx skills add maciekzygmunt/lastlook --skill resolve-lastlook
 ```
 
-lastlook itself never installs skills and never writes files into your repo.
+lastlook never installs skills itself and never writes files into your repo.
 
-## Where data lives
+## Diff modes
 
-Review data lives under `~/.lastlook/` (override with `$LASTLOOK_DATA_DIR`), keyed by repo path. Past reviews are browsable read-only from the sidebar; the server keeps the last 5 fully-settled ones and prunes the rest. Delete `~/.lastlook/` at any time to start fresh — your repos are untouched.
+Pick one in the top bar:
+
+| Mode | Shows |
+| --- | --- |
+| **Uncommitted** (default) | Worktree vs `HEAD`, untracked files included |
+| **Last commit** | `HEAD~1` vs `HEAD` |
+| **Branch** | `HEAD` vs its merge-base with the repository's default branch (`origin/main`, or whatever `origin/HEAD` points at) — committed work only, editable base |
+| **PR** | The current branch's pull request on GitHub, resolved for you through the `gh` CLI — no number to look up |
+
+Uncommitted and Last commit refresh themselves: while an agent works, the diff updates on screen within a few seconds. Your expanded files, file-tree state and single-file focus are kept, and the refresh holds off while you type a comment. Branch and PR stay exactly as loaded.
+
+## Reference
+
+**Requirements:** Node ≥ 20 and git. `gh` (authenticated) only for PR mode.
+
+**Flags:**
+
+| Flag | Effect |
+| --- | --- |
+| `--open` | Also launch the browser (`$BROWSER` overrides the platform opener) |
+| `--force` | Replace an already-running lastlook for this repo |
+
+Without `--force`, a second launch prints the running server's URL and exits. The server takes port 4700, scanning upward on conflict.
+
+**Data:** reviews live in `~/.lastlook/` (override with `$LASTLOOK_DATA_DIR`), keyed by repo path. Past reviews are read-only in the sidebar; the last 5 settled ones are kept. Delete the folder any time — your repos are untouched.
 
 ## Development
 
@@ -79,7 +82,7 @@ npm-workspaces monorepo:
 ```sh
 npm install
 npm run build      # web UI, then server (copies web dist into the package)
-npm test           # all workspaces; includes an npm-pack integration test
+npm test           # all workspaces, including an npm-pack integration test
 npm run dev        # server on tsx, serving the last-built web UI
 ```
 
